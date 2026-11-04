@@ -38,6 +38,7 @@ Read README.md first. This file is how the code is put together and the rules fo
 | 19-trace | "How it is calculated" panel: numbers tagged `data-tr="c:key:period"`, `"m:summaryKey"` or `"y:key:year"`; formulas come from `src/trace.js` |
 | 23-locks | deal locks: lock bar, Home badges, Lock & edit / Unlock / Force unlock, read-only mode (`canEdit`, `applyReadOnly`, `readOnlyRevert` in `scheduleSave`), 5-second poll of `/api/locks` that refreshes read-only copies |
 | 24-documents | Documents tab: list of the deal's `Documents/<category>/` on the drive, add (drag-and-drop / file picker), open / show in Finder (server `documents/open`, paths checked to stay inside the folder); source tags link to files via `file` (editor in 15-sources) |
+| 25-updates | update bar: "Deal Desk X is ready · Restart to update" or "can only view deals" (state from `/api/locks` → update), restart via `/api/restart` (the server starts the launcher and stops) |
 | 99-boot | first render and project load |
 
 ## Adding a model input
@@ -57,18 +58,20 @@ Read README.md first. This file is how the code is put together and the rules fo
 - Show a draft (screenshots or a sample file) before shipping visible changes, unless he says to push.
 
 ## Git
-- This folder is a local git repository. `main` = what is installed on the Mac; each release is tagged `v<APP_VERSION>`.
+- This folder is a local git repository. `main` = what is published (`Releases/current.json` on the shared drive); each release is tagged `v<APP_VERSION>`.
 - No remote: `tests/deals/` and `tests/expected/` hold real deals, so never push this repository to GitHub or any other hosted service.
-- One branch per change (`feature/<name>`), committed as the work goes. Merge into `main` and tag only when it ships (after Tautvydas says "push"). Unshipped branches replace the old `pending/` folders.
+- One branch per change (`feature/<name>`), committed as the work goes. Merge into `main`, tag and `./release.sh --publish` only when it ships (after Tautvydas says "push"); staging (`./release.sh` without `--publish`) is fine before that. Unshipped branches replace the old `pending/` folders.
 - `dist/`, zips, `__pycache__` and databases are never committed (`.gitignore`).
 
 ## Checks before every release
 ```sh
-./build.sh && ./run_tests.sh      # deploy.sh runs this and stops on any failure
+./build.sh && ./run_tests.sh      # release.sh runs this and stops on any failure
 ```
 - **Engine guard** (`tests/engine_test.js`): the confirmed figures of Skýra, Ustroń, Noa and M23 (reconciled once against the analysts' models) must still come out, and every result of every deal in `tests/deals/` must equal `tests/expected/engine.json`.
 - **App guard** (`tests/app_snapshot.js`, needs Playwright): every tab, the committee deck and the Excel export of every test deal must equal `tests/expected/app.json` (clock fixed at 24 Oct 2026).
 - A guard failure means a number moved. Fix it, or – when the change is intended – re-record with `--update` and write in docs/CHANGELOG.md which numbers changed and why. Never re-record just to make a failure go away.
 - `tests/server_test.py` covers storage, inbox, backups, the origin guard and the Gmail read-only rule; `tests/drive_test.py` runs two servers on one shared folder (saves across Macs, stale copies, rev conflicts, versions, deletes, inbox, drive missing); `tests/ui_test.js` builds a fictional deal through the browser.
 - `data/` (gitignored) holds a copy of Tautvydas's pre-drive `~/Deal Desk` – migration source for development. Read it only through copies; never modify or commit it.
-- `tests/deals/` holds real deals: keep this folder private (package.sh never includes it).
+- `tests/deals/` holds real deals: keep this folder private (release.sh only copies dist/ to the drive).
+- Never run `src/server.py` against the real shared drive while developing: set `DEALDESK_DRIVE` to a test folder (see README → Development). Tests always do.
+- `tests/launcher_test.py` installs and updates through the real launcher in a fake home; `tests/update_ui_test.js` checks the update bar and restart in the browser.

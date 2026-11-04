@@ -1,18 +1,23 @@
-Deal Desk – InRento's underwriting app (test version)
+Deal Desk – InRento's underwriting app
 
-Needs a Mac with Apple Silicon (M1 or later) and Google Drive for Desktop, signed in with your InRento account,
-with the "Deal desk" shared drive visible in Finder (Google Drive > Shared drives > Deal desk).
+You need: a Mac with Apple Silicon (M1 or later) and Google Drive for Desktop, signed in with your InRento account,
+with the "Deal desk" shared drive showing in Finder (Google Drive > Shared drives > Deal desk).
+Tip: right-click the "Deal desk" shared drive > Offline access > Available offline, so Deal Desk starts without waiting
+for downloads.
 
-1. Unzip, then drag "Deal Desk.app" to your Applications folder (or the Desktop).
-2. Double-click it. macOS will say it cannot check the app because it is not from the App Store.
-   Click Done, open System Settings > Privacy & Security, scroll down and click "Open Anyway" next to Deal Desk,
-   then confirm with your password. (Older macOS: right-click the app > Open > Open.)
-   This is needed once.
-3. The app opens in your browser at http://127.0.0.1:8765. The first start takes a few seconds while it unpacks.
+1. Drag "Deal Desk" onto the Applications folder next to it. Then eject this disk image.
+2. Open Deal Desk from Applications. The first time, macOS says it cannot check the app: click Done, open
+   System Settings > Privacy & Security, scroll down, click "Open Anyway" next to Deal Desk and confirm with your
+   password. (Older macOS: right-click the app > Open > Open.) Needed once.
+3. The first start fetches Deal Desk from the shared drive (a few seconds) and opens it in your browser at
+   http://127.0.0.1:8765. Keep it in the Dock.
 
-Deals are kept in the "Deal desk" shared drive, so everyone on the team sees the same deals. Google Drive for Desktop
-does the syncing; the app itself only reads and writes files in that folder. Your Mac keeps a local index, your Gmail
-cache and a log in the folder "Deal Desk" in your home folder.
+Updates come by themselves: when a new version is published on the shared drive, Deal Desk shows
+"Restart to update". There is nothing to reinstall.
+
+Deals live in the "Deal desk" shared drive, so everyone on the team sees the same deals. To change a deal, press
+"Lock & edit"; others see it read-only until you unlock it. Your Mac keeps only a local index, your Gmail cache and a
+log in the folder "Deal Desk" in your home folder.
 
 Gmail (optional): Home page > Email settings, with a Gmail app password. Read-only – the app never changes your mailbox,
 and the password is kept in the macOS Keychain.

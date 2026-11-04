@@ -11,21 +11,27 @@ The underwriting app for InRento loans: a deal register, a monthly cash-flow mod
 | `src/server.py` | Local server: deals in the shared folder (with a local SQLite index), versions, inbox, Gmail (read-only), ECB rates. Python standard library only |
 | `src/styles.css` | All styling (light and dark) |
 | `vendor/` | Third-party browser libraries: SheetJS (Excel), jsPDF + html2canvas (PDF), PptxGenJS (PowerPoint) |
-| `tests/` | Engine regression (M23 against the original Excel), server tests with a fake Gmail, browser flow test |
-| `mac/` | Copies of the app launcher (`Deal Desk.app/Contents/MacOS/DealDesk`) and `Info.plist` |
+| `tests/` | Engine regression (M23 against the original Excel), server tests with a fake Gmail, shared-folder tests (two Macs), launcher install/update test, browser tests |
+| `mac/` | The app: launcher (`Deal Desk.app/Contents/MacOS/DealDesk`), `Info.plist` and the install note – `release.sh --installer` turns them into `Install Deal Desk.dmg` |
 | `docs/` | Change log and the format Claude uses to draft new deals into the import folder |
-| `dist/` | Build output – exactly what goes into `Deal Desk.app/Contents/Resources` (generated, do not edit) |
+| `dist/` | Build output – exactly what `release.sh` puts in `Releases/<version>/` on the shared drive (generated, do not edit) |
 
 ## Everyday commands
 
 ```sh
 ./build.sh          # src → dist/ (needs nothing; uses node for a syntax check when installed)
 ./run_tests.sh      # engine + server tests; the browser test too when Playwright is installed
-./deploy.sh         # build, test, copy dist/ into ~/Desktop/Deal Desk.app – then close the Deal Desk tab and click the Dock icon
-./package.sh        # "Deal Desk <version>.zip" for a colleague: the app with an empty database (Apple Silicon Macs)
+./release.sh        # build, test, stage Releases/<APP_VERSION>/ on the shared drive (nobody gets it yet)
+./release.sh --publish            # switch Releases/current.json to it – after Tautvydas says "push"
+./release.sh --rollback 3.19.0    # switch back to an earlier staged version
+./release.sh --installer          # rebuild "Install Deal Desk.dmg" on the drive (only when mac/ changes)
 ```
 
-Bump `APP_VERSION` in `src/server.py` with every release: the launcher restarts a running older server when the version differs.
+**Install and updates.** Colleagues open `Install Deal Desk.dmg` from the shared drive and drag Deal Desk to Applications – once. The app is only a launcher: at every start it reads `Releases/current.json`, copies that version into `~/Deal Desk/app/<version>/` (every file checked against its checksum; if one does not match yet – Drive still syncing – the version already on the Mac runs) and starts it. After `--publish`, open apps show "Restart to update"; unsaved work is saved first. `--min-version` makes older apps read-only when the deal format changes, and a deal saved by a newer app is read-only for older ones. The built-in Python is published once (`--runtime <folder with python/ or .tar.gz>`) and reused.
+
+Bump `APP_VERSION` in `src/server.py` for every release: a staged version never changes (release.sh refuses different files under the same number).
+
+**Development.** On a Mac with the shared drive, `python3 src/server.py` finds the real shared drive and works on the real deals. Point it at a test folder instead: `python3 src/server.py --init-drive /tmp/dd-test` once, then `DEALDESK_DRIVE=/tmp/dd-test DEALDESK_DATA=/tmp/dd-test-data python3 src/server.py`.
 
 ## Data
 
