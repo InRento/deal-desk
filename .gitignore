@@ -7,3 +7,6 @@ node_modules/
 Deal Desk *.zip
 *.sqlite
 *.sqlite-journal
+
+# real deals copied from ~/Deal Desk for the Drive migration – never commit
+data/
