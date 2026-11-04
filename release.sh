@@ -113,7 +113,9 @@ if a.runtime:
         shutil.copyfile(src, os.path.join(rel, rname))
     runtime = {"file": rname, "sha256": rsha}
 else:
-    runtime = cur.get("runtime") or (old or {}).get("runtime")
+    staged = [read(m) or {} for m in sorted(glob.glob(os.path.join(rel, "*", "manifest.json")), key=os.path.getmtime, reverse=True)]
+    runtime = cur.get("runtime") or (old or {}).get("runtime") or (read(os.path.join(rel, "preview.json")) or {}).get("runtime") \
+        or next((m["runtime"] for m in staged if m.get("runtime")), None)
     if not runtime:
         sys.exit("The first release needs the built-in Python: --runtime <folder with python/ or python-runtime.tar.gz>")
 
