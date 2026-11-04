@@ -438,3 +438,10 @@ table.docs tr.grp th{text-align:left;font-weight:600;padding-top:14px}
 .doclink:hover{text-decoration:underline}
 .docempty{padding:28px 0;text-align:center;border:1px dashed var(--line-2);border-radius:6px}
 
+/* update bar (25-updates.js) */
+.updbar{position:fixed;right:16px;bottom:16px;z-index:80;display:flex;align-items:center;gap:8px;flex-wrap:wrap;max-width:min(560px,calc(100vw - 32px));padding:9px 10px 9px 14px;border-radius:8px;font-size:12.5px;background:var(--accent-soft);color:var(--accent);box-shadow:0 6px 18px rgba(0,0,0,.14)}
+.updbar.req{background:var(--warn-soft);color:var(--warn)}
+.updbar b{font-weight:600}
+.updbar .sub{color:inherit;opacity:.85}
+.updbar .btn.takeover{background:var(--warn);border-color:var(--warn);color:var(--surface)}
+

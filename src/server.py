@@ -877,6 +877,7 @@ def load_deal(pid, folder, data):
         meta_set(con, f"act:{pid}", str(top))
         meta_set(con, f"rev:{pid}", str(int(data.get("rev") or 0)))
         meta_set(con, f"extrev:{pid}", str(int(data.get("rev") or 0)))
+        meta_set(con, f"schema:{pid}", str(int(data.get("schema") or 0)))
         meta_set(con, f"extby:{pid}", f"{data.get('savedBy') or ''}|{data.get('savedAt') or ''}")
         meta_set(con, f"folder:{pid}", folder)
     con.close()
@@ -967,6 +968,7 @@ def drive_sync(force=False):
             drive_scan()
             scan_locks()
             lock_heartbeat()
+            check_release()
             SYNC["error"] = ""
             SYNC["lastSync"] = now()
         except OSError as e:
@@ -1050,6 +1052,13 @@ def is_new(pid):
 
 
 def edit_refusal(pid):
+    if SYNC.get("too_old"):
+        return f"This Deal Desk ({APP_VERSION}) is older than the shared deals allow ({SYNC['too_old']} or newer). Restart Deal Desk to update."
+    con = connect()
+    schema = int(meta_get(con, f"schema:{pid}") or 0)
+    con.close()
+    if schema > DEAL_SCHEMA:
+        return "this deal was saved by a newer Deal Desk. Restart Deal Desk to update."
     if holds(pid):
         return None
     c = SYNC["locks"].get(pid)
@@ -1260,6 +1269,38 @@ def inbox_documents(inbox, f, pid, item):
     else:
         shutil.rmtree(src, ignore_errors=True)
     return n
+
+
+# ---- Updates. The launcher runs the version named in <drive>/Releases/current.json. A running app learns of a newer one
+# here and offers a restart; an app older than min_version (or a deal saved by a newer app) is read-only, so an old
+# program never writes an old format over newer data.
+SERVER = [None]
+
+
+def vtuple(v):
+    return tuple(int(x) if x.isdigit() else 0 for x in re.findall(r"\d+", str(v or "0")))
+
+
+def check_release():
+    r = read_json(os.path.join(DRIVE, "Releases", "current.json")) or {}
+    newest, minimum = r.get("version"), r.get("min_version")
+    SYNC["update"] = newest if newest and vtuple(newest) > vtuple(APP_VERSION) else None
+    SYNC["too_old"] = minimum if minimum and vtuple(APP_VERSION) < vtuple(minimum) else None
+
+
+def update_status():
+    return {"version": APP_VERSION, "available": SYNC.get("update"), "required": SYNC.get("too_old"),
+            "canRestart": bool(os.environ.get("DEALDESK_LAUNCHER"))}
+
+
+def restart_via_launcher():
+    """Write what is pending, start the launcher (it installs and starts the new version), then stop this server."""
+    drive_sync(force=True)
+    launcher = os.environ["DEALDESK_LAUNCHER"]
+    cmd = ["/usr/bin/open", "-n", launcher, "--args", "--restart"] if launcher.endswith(".app") else [launcher, "--restart"]
+    subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    if SERVER[0]:
+        threading.Timer(0.3, SERVER[0].shutdown).start()
 
 
 def drive_status():
@@ -2033,7 +2074,8 @@ class Handler(BaseHTTPRequestHandler):
             con = connect()
             revs = {r["key"][7:]: int(r["value"]) for r in con.execute("SELECT key, value FROM meta WHERE key LIKE 'extrev:%'")}
             con.close()
-            return self.send_json({"me": ME, "locks": {pid: public_lock(c) for pid, c in SYNC["locks"].items()}, "revs": revs, "storage": drive_status()})
+            return self.send_json({"me": ME, "locks": {pid: public_lock(c) for pid, c in SYNC["locks"].items()}, "revs": revs, "storage": drive_status(),
+                                   "update": update_status()})
         m = re.match(r"^/api/projects/([^/]+)/documents$", path)
         if m:
             root = docs_root(m.group(1))
@@ -2301,6 +2343,11 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 dest = backup("manual")
             return self.send_json({"ok": True, "file": os.path.relpath(dest, DATA)})
+        if path == "/api/restart":
+            if not os.environ.get("DEALDESK_LAUNCHER"):
+                return self.send_json({"error": "Close the browser tab and open Deal Desk again to update."}, 400)
+            restart_via_launcher()
+            return self.send_json({"ok": True})
         if path == "/api/storage/sync":
             drive_sync(force=True)
             return self.send_json(dict(ok=not SYNC["error"], **drive_status()))
@@ -2410,7 +2457,7 @@ def main():
     auto_import()
     url = f"http://127.0.0.1:{a.port}/"
     try:
-        srv = ThreadingHTTPServer(("127.0.0.1", a.port), Handler)
+        srv = SERVER[0] = ThreadingHTTPServer(("127.0.0.1", a.port), Handler)
     except OSError:
         print(f"Port {a.port} is busy – Deal Desk is probably already running. Opening {url}")
         if not a.no_browser:

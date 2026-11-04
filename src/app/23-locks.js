@@ -78,7 +78,7 @@ async function pollLocks() {
   polling = true;
   try {
     const r = await api('GET', '/api/locks');
-    S.me = r.me;
+    S.me = r.me; updateBar(r.update);
     const before = JSON.stringify(S.locks), fresh = [];
     for (const id of Object.keys(S.projects)) if (S.server[id]) S.locks[id] = r.locks[id] || null;
     for (const [id, rev] of Object.entries(r.revs || {})) {
