@@ -444,4 +444,4 @@ table.docs tr.grp th{text-align:left;font-weight:600;padding-top:14px}
 .updbar b{font-weight:600}
 .updbar .sub{color:inherit;opacity:.85}
 .updbar .btn.takeover{background:var(--warn);border-color:var(--warn);color:var(--surface)}
-
+.stagecounts{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}.stagecounts .sc{display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}.stagecounts .sc b{font-size:15px}.stagecounts .sc.zero{opacity:.45}
