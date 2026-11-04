@@ -13,6 +13,8 @@ import sys
 import tempfile
 import time
 import unittest
+import email.utils
+import datetime as dt
 import urllib.error
 import urllib.request
 
@@ -30,6 +32,11 @@ def free_port():
     return p
 
 
+def ago(days, hour=8):
+    # the server marks threads quiet for over 14 days as handled on first sync, so dates must follow the clock
+    return email.utils.format_datetime(dt.datetime.now(dt.timezone.utc).replace(hour=hour, minute=0, second=0, microsecond=0) - dt.timedelta(days=days))
+
+
 def raw(subject, frm, to, date, body):
     return f"From: {frm}\nTo: {to}\nSubject: {subject}\nDate: {date}\nMessage-ID: <{abs(hash(subject + date))}@x>\nContent-Type: text/plain; charset=\"utf-8\"\n\n{body}\n"
 
@@ -41,13 +48,13 @@ FIXTURE = {
     "mailboxes": ["INBOX", "[Gmail]", "[Gmail]/All Mail", "[Gmail]/Sent Mail", "New deals/Test Tower, Riga", "Personal"],
     "messages": [
         {"msgid": 1001, "thrid": 9001, "labels": ["New deals/Test Tower, Riga"],
-         "raw": raw("Updated price list", "Broker <broker@example.com>", "me@example.com", "Mon, 19 Oct 2026 08:00:00 +0000", "Please confirm the term sheet by Friday.")},
+         "raw": raw("Updated price list", "Broker <broker@example.com>", "me@example.com", ago(2), "Please confirm the term sheet by Friday.")},
         {"msgid": 1002, "thrid": 9002, "labels": ["New deals/Test Tower, Riga"],
-         "raw": raw("Appraisal", "Owner <owner@example.com>", "me@example.com", "Fri, 16 Oct 2026 08:00:00 +0000", "The valuer sends the appraisal next week.")},
+         "raw": raw("Appraisal", "Owner <owner@example.com>", "me@example.com", ago(5), "The valuer sends the appraisal next week.")},
         {"msgid": 1003, "thrid": 9002, "labels": [],
-         "raw": raw("Re: Appraisal", "Me <me@example.com>", "owner@example.com", "Tue, 20 Oct 2026 08:00:00 +0000", "Thanks, please send it when you have it.")},
+         "raw": raw("Re: Appraisal", "Me <me@example.com>", "owner@example.com", ago(1), "Thanks, please send it when you have it.")},
         {"msgid": 1004, "thrid": 9003, "labels": ["Personal"],
-         "raw": raw("Dinner", "Friend <friend@example.com>", "me@example.com", "Tue, 20 Oct 2026 09:00:00 +0000", "Not deal related.")},
+         "raw": raw("Dinner", "Friend <friend@example.com>", "me@example.com", ago(1, 9), "Not deal related.")},
     ],
 }
 
