@@ -8,6 +8,7 @@ Read README.md first. This file is how the code is put together and the rules fo
 - No framework. Each tab is a function returning an HTML string (`tabInputs`, `tabSens`, …), rendered by `renderTab()`. Live numbers are placeholders `<div data-out="name">` filled by `OUT.name()` on every recalculation (`refreshOutputs()`), so typing never re-renders the tab.
 - Every editable field has `data-k="<path>"` (`inputs.rate`, `assets.3.salePrice`, `scenarios.2.deck`). `onEdit` (11-editing.js) writes the value into the project, schedules the save (`scheduleSave`) and recalculates. Selects and checkboxes re-render the tab; text fields do not.
 - Buttons use `data-act="…"`; the main switch is in 11-editing.js, feature-specific actions sit in their own file.
+- Locks: only the person holding a deal's lock can change it; an unlocked deal is read-only for everyone. The server refuses every write without the lock (HTTP 423) – the app's read-only mode is only the visible part. Anything that changes a deal must go through `scheduleSave` (which reverts edits on a read-only deal) or a server route that checks `edit_refusal`.
 - Storage: deals live in the shared Google Drive folder (`Deals/<name> (<id>)/deal.json` + `versions/` + `activity/`); the server's SQLite database is only this Mac's index of it plus the Gmail cache. There is no local-only mode. Tests always pass `DEALDESK_DRIVE` (a temporary folder) – without it the server finds the real shared drive on this Mac.
 - State: `S` (01-core.js). `cur()` is the open project, `S.model` the engine result shown (EUR view when switched), `S.modelOrig` the result in the project's own currency (the model check always uses this one).
 - **One definition per function.** Do not wrap or reassign an existing function (`const _x = x; x = function …`); extend the original instead. v3.11 removed 26 such wrappers.
@@ -35,6 +36,7 @@ Read README.md first. This file is how the code is put together and the rules fo
 | 18-deck | committee deck (2 slides): data (`committeeData`, `deckGrid`, `stressHeadline`), one layout drawn twice (`deckWriter`: PptxGenJS and HTML for preview/PDF); logo and fonts in 18-deck-assets |
 | 20-judgement | decision log: pre-mortem, snapshot at the decision, post-mortem; Home → Decisions |
 | 19-trace | "How it is calculated" panel: numbers tagged `data-tr="c:key:period"`, `"m:summaryKey"` or `"y:key:year"`; formulas come from `src/trace.js` |
+| 23-locks | deal locks: lock bar, Home badges, Lock & edit / Unlock / Force unlock, read-only mode (`canEdit`, `applyReadOnly`, `readOnlyRevert` in `scheduleSave`), 5-second poll of `/api/locks` that refreshes read-only copies |
 | 99-boot | first render and project load |
 
 ## Adding a model input
