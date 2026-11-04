@@ -1,0 +1,125 @@
+{
+ "name": "Test instalments, Vilnius",
+ "inputs": {
+  "currency": "EUR",
+  "drawdown": "2027-01-01",
+  "horizon": "30",
+  "loan": "2000000",
+  "tranchesOn": false,
+  "trancheMode": "dates",
+  "rate": "11",
+  "term": "24",
+  "repayType": "Bullet",
+  "arrFee": "5",
+  "feeBasis": "facility",
+  "feeTreatment": "withheld",
+  "sweepDefault": "100",
+  "saleRepay": "sweep",
+  "sweepBasis": "Gross sale price",
+  "intTiming": "monthly",
+  "saleOrder": "interestFirst",
+  "payMonths": [
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true
+  ],
+  "refinanced": "1500000",
+  "equityAuto": false,
+  "equity": "0",
+  "haircut": "30",
+  "sellCost": "3",
+  "maxLTV": "70",
+  "constrOn": false,
+  "worksStart": "2027-01-01",
+  "worksEnd": "2028-03-31",
+  "contingency": "10",
+  "spendCurve": "scurve",
+  "fundingOrder": "proRata",
+  "constrEquity": "300000",
+  "collCredit": "0",
+  "costVatOn": false,
+  "costVatRate": "21",
+  "costVatLag": "2",
+  "saleVatMode": "excl",
+  "saleVatRate": "21",
+  "payPlan": [
+   {
+    "pct": "10",
+    "months": "0"
+   },
+   {
+    "pct": "20",
+    "months": "6"
+   }
+  ],
+  "escrowOn": false
+ },
+ "tranches": [],
+ "constrLines": [],
+ "assets": [
+  {
+   "name": "Unit A",
+   "inColl": true,
+   "market": "900000",
+   "saleDate": "2028-01-15",
+   "salePrice": "1000000",
+   "contractDate": "2027-03-10",
+   "payPlan": ""
+  },
+  {
+   "name": "Unit B",
+   "inColl": true,
+   "market": "750000",
+   "saleDate": "2027-12-15",
+   "salePrice": "800000",
+   "contractDate": "2026-11-20",
+   "payPlan": ""
+  },
+  {
+   "name": "Unit C",
+   "inColl": true,
+   "market": "550000",
+   "saleDate": "2028-03-15",
+   "salePrice": "600000",
+   "contractDate": "2027-02-01",
+   "payPlan": "deed"
+  },
+  {
+   "name": "Unit D",
+   "inColl": true,
+   "market": "450000",
+   "saleDate": "2028-05-15",
+   "salePrice": "500000",
+   "contractDate": "",
+   "payPlan": ""
+  },
+  {
+   "name": "Unit E",
+   "inColl": true,
+   "market": "450000",
+   "saleDate": "2027-08-15",
+   "salePrice": "500000",
+   "contractDate": "2027-06-01",
+   "payPlan": "30@0, 30@3"
+  }
+ ],
+ "scenarios": [
+  {
+   "name": "Base"
+  },
+  {
+   "name": "Completion 6 m late",
+   "complDelay": "6"
+  }
+ ],
+ "id": "test-instalments"
+}

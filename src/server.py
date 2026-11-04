@@ -1,0 +1,1511 @@
+#!/usr/bin/env python3
+"""InRento Deal Desk – local server.
+
+Serves the app at http://127.0.0.1:8765 and stores every project in deals.sqlite
+(next to this file). Files attached in earlier versions stay in documents/<project id>/ but are no
+longer shown or added. Standard library only: no pip installs needed.
+
+    python3 server.py              start the app and open the browser
+    python3 server.py --no-browser start without opening a browser
+    python3 server.py --import x.json   import projects from a JSON export, then exit
+    python3 server.py --port 9000  use another port
+"""
+import argparse
+import datetime as dt
+import json
+import mimetypes
+import os
+import re
+import sqlite3
+import sys
+import threading
+import uuid
+import webbrowser
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlparse, parse_qs, quote
+
+HERE = os.path.dirname(os.path.abspath(__file__))           # program files (index.html, xlsx)
+DATA = os.environ.get("DEALDESK_DATA") or HERE               # database, documents, backups
+DB_PATH = os.path.join(DATA, "deals.sqlite")
+BACKUP_DIR = os.path.join(DATA, "backups")
+DOC_DIR = os.path.join(DATA, "documents")
+STATIC = {"/": ("index.html", "text/html; charset=utf-8"),
+          "/index.html": ("index.html", "text/html; charset=utf-8"),
+          "/xlsx.full.min.js": ("xlsx.full.min.js", "application/javascript"),
+          "/jspdf.umd.min.js": ("jspdf.umd.min.js", "application/javascript"),
+          "/html2canvas.min.js": ("html2canvas.min.js", "application/javascript")}
+SCHEMA_VERSION = 2
+APP_VERSION = "3.18.0"  # bump when the program changes; the launcher restarts an older running server
+
+# ---------------------------------------------------------------------------
+# Schema. Input columns keep exactly what was typed. NUMERIC columns store plain
+# numbers as numbers (queryable) and expressions such as "17000/12" as text.
+# *_pct columns are in percent units (8.5 = 8.5 %). JSON columns hold small arrays.
+# ---------------------------------------------------------------------------
+PROJECT_FIELDS = [
+    ("name", "name", "TEXT NOT NULL"), ("status", "status", "TEXT"), ("borrower", "borrower", "TEXT"),
+    ("country", "country", "TEXT"), ("projectType", "project_type", "TEXT"), ("contact", "contact", "TEXT"),
+    ("notes", "notes", "TEXT"), ("createdAt", "created_at", "TEXT"), ("updatedAt", "updated_at", "TEXT"),
+    ("nextAction", "next_action", "TEXT"), ("nextOwner", "next_action_owner", "TEXT"), ("nextDue", "next_action_due", "TEXT"),
+    ("judgement", "judgement_json", "JSON"),  # decision log: pre-mortem, snapshot at the decision, post-mortem (v3.14)
+]
+# Pipeline stages (v3.5). Older statuses are mapped once on start and whenever a project is saved or imported.
+STAGES = ["New deal", "Initial analysis", "Underwriting", "Turned in", "Rejected", "Funded", "Realised"]
+STAGE_MAP = {"Lead": "New deal", "Underwriting": "Underwriting", "Credit committee": "Turned in", "Approved": "Turned in",
+             "Funded": "Funded", "Repaid": "Realised", "Declined": "Rejected", "On hold": "Initial analysis"}
+
+
+def map_stage(s):
+    s = (s or "").strip()
+    return s if s in STAGES else STAGE_MAP.get(s, "New deal")
+MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
+INPUT_FIELDS = [
+    ("currency", "currency", "TEXT"), ("drawdown", "drawdown_date", "TEXT"), ("horizon", "horizon_months", "NUMERIC"),
+    ("openingCash", "opening_cash", "NUMERIC"),
+    ("opModel", "operating_model", "TEXT"),
+    ("revenueSource", "revenue_source", "TEXT"), ("revenue", "revenue_per_month", "NUMERIC"), ("revGrowth", "revenue_growth_pct", "NUMERIC"),
+    ("opex", "opex_per_month", "NUMERIC"), ("opexGrowth", "opex_growth_pct", "NUMERIC"), ("cfStart", "cash_flow_start_date", "TEXT"),
+    ("tax", "tax_rate_pct", "NUMERIC"), ("otherDebt", "other_debt_service_per_month", "NUMERIC"), ("otherDebtEnd", "other_debt_end_date", "TEXT"),
+    ("vat", "vat_in_prices_pct", "NUMERIC"), ("commission", "channel_commission_pct", "NUMERIC"), ("cardFee", "card_fee_pct", "NUMERIC"),
+    ("ancillary", "ancillary_revenue_pct", "NUMERIC"),
+    ("loan", "loan_amount", "NUMERIC"), ("tranchesOn", "drawn_in_tranches", "INTEGER"), ("rate", "interest_rate_pct", "NUMERIC"),
+    ("term", "term_months", "NUMERIC"),
+    ("repayType", "repayment_type", "TEXT"), ("grace", "grace_months", "NUMERIC"), ("capitalise", "capitalise_interest", "TEXT"),
+    ("payMonths", "interest_payment_months", "JSON"),
+    ("extOn", "extension_used", "INTEGER"), ("extMonths", "extension_months", "NUMERIC"), ("extFee", "extension_fee_pct", "NUMERIC"),
+    ("extRate", "extension_rate_pct", "NUMERIC"), ("defaultRate", "default_rate_pct", "NUMERIC"),
+    ("sweepDefault", "default_sweep_pct", "NUMERIC"), ("sweepBasis", "sweep_basis", "TEXT"), ("sweepApplies", "sweep_applies_to", "TEXT"),
+    ("saleRepay", "sale_repayment_rule", "TEXT"), ("releasePct", "release_price_pct", "NUMERIC"),
+    ("opSweepPct", "cash_sweep_pct", "NUMERIC"), ("opSweepMin", "cash_sweep_min_balance", "NUMERIC"), ("opSweepMonths", "cash_sweep_months", "JSON"),
+    ("arrFee", "arrangement_fee_pct", "NUMERIC"), ("feeBasis", "fee_basis", "TEXT"), ("feeTreatment", "fee_treatment", "TEXT"),
+    ("commitFee", "commitment_fee_pct", "NUMERIC"), ("reserveMonths", "interest_reserve_months", "NUMERIC"),
+    ("prepayFee", "prepayment_fee_pct", "NUMERIC"), ("exitFee", "exit_fee_pct", "NUMERIC"),
+    ("fixedGain", "fixed_capital_gain_pct", "NUMERIC"), ("profitShare", "profit_share_pct", "NUMERIC"),
+    ("deduction", "profit_deduction_pct", "NUMERIC"), ("acctFee", "accounting_fee_ratio_pct", "NUMERIC"),
+    ("refinanced", "debt_refinanced", "NUMERIC"), ("purchaseSource", "purchase_source", "TEXT"), ("purchase", "purchase_price", "NUMERIC"),
+    ("closingCosts", "closing_costs", "NUMERIC"), ("otherUses", "other_uses", "NUMERIC"), ("equityAuto", "equity_auto", "INTEGER"),
+    ("equity", "borrower_equity", "NUMERIC"), ("projectCost", "project_cost_for_ltc", "NUMERIC"),
+    ("haircut", "forced_sale_haircut_pct", "NUMERIC"), ("sellCost", "selling_costs_pct", "NUMERIC"),
+    ("maxLTV", "max_ltv_pct", "NUMERIC"), ("minDSCR", "min_dscr", "NUMERIC"), ("targetCover", "target_collateral_cover", "NUMERIC"),
+    ("dscrBasis", "dscr_basis", "TEXT"), ("exitCap", "exit_cap_rate_pct", "NUMERIC"), ("refiLTV", "refinance_bank_ltv_pct", "NUMERIC"),
+    ("dealType", "deal_type", "TEXT"), ("showAll", "show_all_inputs", "INTEGER"), ("intTiming", "interest_timing", "TEXT"),
+    ("saleOrder", "sale_proceeds_order", "TEXT"), ("ignoredChecks", "ignored_checks", "JSON"),
+    ("fxRate", "fx_rate_per_eur", "NUMERIC"), ("fxDate", "fx_rate_date", "TEXT"), ("sources", "field_sources", "JSON"), ("activeVersion", "active_version_id", "TEXT"),
+    ("gmailLabel", "gmail_label", "TEXT"), ("benefits", "deck_benefits", "TEXT"), ("risks", "deck_risks", "TEXT"), ("deckDesc", "deck_description", "TEXT"),
+    # construction / renovation (v3.13)
+    ("constrOn", "construction_on", "INTEGER"), ("worksStart", "works_start_date", "TEXT"), ("worksEnd", "works_completion_date", "TEXT"),
+    ("contingency", "works_contingency_pct", "NUMERIC"), ("spendCurve", "works_spend_curve", "TEXT"), ("fundingOrder", "works_funding_order", "TEXT"),
+    ("constrEquity", "works_equity", "NUMERIC"), ("collCredit", "collateral_progress_credit_pct", "NUMERIC"),
+    ("costVatOn", "works_vat_on", "INTEGER"), ("costVatRate", "works_vat_pct", "NUMERIC"), ("costVatLag", "works_vat_refund_lag_months", "NUMERIC"),
+    ("trancheMode", "tranche_release", "TEXT"), ("saleVatMode", "sale_price_vat_basis", "TEXT"), ("payPlan", "payment_plan", "JSON"), ("escrowOn", "payments_in_escrow", "INTEGER"), ("saleVatRate", "sale_vat_pct", "NUMERIC"),
+    ("loansOn", "several_loans", "INTEGER"),  # several loans in one deal (v3.17)
+] + [(f"seasonality.{i}", f"season_{m}", "NUMERIC") for i, m in enumerate(MONTHS)]
+ASSET_FIELDS = [
+    ("name", "name", "TEXT"), ("inColl", "in_collateral", "INTEGER"), ("market", "market_value", "NUMERIC"),
+    ("valDate", "valuation_date", "TEXT"), ("source", "valuer", "TEXT"), ("haircut", "own_haircut_pct", "NUMERIC"),
+    ("alloc", "allocated_loan", "NUMERIC"), ("acqPrice", "acquisition_price", "NUMERIC"), ("rent", "rent_per_month", "NUMERIC"),
+    ("area", "area_m2", "NUMERIC"), ("saleDate", "planned_sale_date", "TEXT"), ("salePrice", "planned_sale_price", "NUMERIC"),
+    ("sweep", "own_sweep_pct", "NUMERIC"), ("minPrice", "min_selling_price", "NUMERIC"), ("notary", "notary_costs", "NUMERIC"),
+    ("notes", "notes", "TEXT"), ("status", "sale_status", "TEXT"), ("listPrice", "list_price", "NUMERIC"),
+    ("deposit", "deposit", "NUMERIC"), ("depositHeld", "deposit_held", "TEXT"), ("marketDone", "market_value_completed", "NUMERIC"),
+    ("contractDate", "contract_date", "TEXT"), ("payPlan", "own_payment_plan", "TEXT"),  # payment plan (v3.16)
+    ("secures", "secures_loans", "TEXT"), ("repays", "repays_loans_in_order", "TEXT"),  # several loans (v3.17)
+]
+ADJ_FIELDS = [
+    ("desc", "description", "TEXT"), ("type", "type", "TEXT"), ("date", "start_date", "TEXT"), ("recurrence", "recurrence", "TEXT"),
+    ("end", "end_date", "TEXT"), ("amount", "amount", "NUMERIC"), ("notes", "notes", "TEXT"),
+]
+SCEN_FIELDS = [
+    ("name", "name", "TEXT"), ("rev", "revenue_change_pct", "NUMERIC"), ("opex", "opex_change_pct", "NUMERIC"),
+    ("rentDelay", "rent_delay_months", "NUMERIC"), ("rate", "rate_change_pp", "NUMERIC"), ("salePrice", "sale_price_change_pct", "NUMERIC"),
+    ("saleDelay", "sale_delay_months", "NUMERIC"), ("value", "value_change_pct", "NUMERIC"), ("capex", "capex_change_pct", "NUMERIC"),
+    ("exitDelay", "exit_delay_months", "NUMERIC"), ("deck", "in_committee_deck", "INTEGER"), ("complDelay", "completion_delay_months", "NUMERIC"),
+]
+TODO_FIELDS = [("text", "text", "TEXT"), ("done", "done", "INTEGER"), ("category", "category", "TEXT"), ("due", "due_date", "TEXT"),
+               ("from", "requested_from", "TEXT"), ("askedOn", "asked_on", "TEXT"), ("closedOn", "closed_on", "TEXT")]
+TRANCHE_FIELDS = [("date", "draw_date", "TEXT"), ("amount", "amount", "NUMERIC"), ("label", "label", "TEXT"), ("milestone", "progress_milestone_pct", "NUMERIC"),
+                  ("loan", "loan_no", "TEXT"), ("fee", "own_fee_pct", "NUMERIC"), ("rate", "own_rate_pct", "NUMERIC"), ("minMonths", "min_interest_months", "NUMERIC"),
+                  ("trigger", "release_trigger", "TEXT"), ("trigAmount", "release_when_balance_below", "NUMERIC"), ("trigLoan", "release_balance_of_loans", "TEXT"),
+                  ("trigUnits", "release_after_units_sold", "NUMERIC")]
+LOAN_FIELDS = [("name", "name", "TEXT"), ("fee", "fee_pct", "NUMERIC"), ("rate", "rate_pct", "NUMERIC"), ("gain", "capital_gain_pct", "NUMERIC"),
+               ("reserveMonths", "interest_reserve_months", "NUMERIC"), ("term", "term_months", "NUMERIC")]
+CONSTR_FIELDS = [("name", "name", "TEXT"), ("budget", "budget", "NUMERIC"), ("spent", "spent_to_date", "NUMERIC"), ("sched", "monthly_schedule", "JSON")]
+DEBT_FIELDS = [
+    ("lender", "lender", "TEXT"), ("balance", "balance", "NUMERIC"), ("rate", "rate_pct", "NUMERIC"), ("maturity", "maturity_date", "TEXT"),
+    ("prepay", "prepayment_cost", "NUMERIC"), ("refinanced", "refinanced", "INTEGER"), ("service", "monthly_service", "NUMERIC"),
+    ("end", "service_end_date", "TEXT"), ("notes", "notes", "TEXT"),
+]
+REVLINE_FIELDS = [
+    ("name", "name", "TEXT"), ("kind", "kind", "TEXT"), ("units", "units", "NUMERIC"), ("price", "price", "NUMERIC"),
+    ("occ", "occupancy_pct", "NUMERIC"), ("start", "start_date", "TEXT"), ("end", "end_date", "TEXT"), ("growth", "growth_pct", "NUMERIC"),
+    ("occM", "occupancy_by_month_pct", "JSON"), ("priceM", "price_by_month", "JSON"),
+]
+COSTLINE_FIELDS = [
+    ("name", "name", "TEXT"), ("kind", "kind", "TEXT"), ("amount", "amount", "NUMERIC"), ("growth", "growth_pct", "NUMERIC"),
+    ("start", "start_date", "TEXT"), ("end", "end_date", "TEXT"), ("months", "months", "TEXT"), ("amountM", "amount_by_month", "JSON"),
+]
+CHILDREN = [("assets", ASSET_FIELDS, "assets"), ("adjustments", ADJ_FIELDS, "adjustments"), ("scenarios", SCEN_FIELDS, "scenarios"),
+            ("todos", TODO_FIELDS, "todos"), ("tranches", TRANCHE_FIELDS, "tranches"), ("existing_debts", DEBT_FIELDS, "debts"),
+            ("revenue_lines", REVLINE_FIELDS, "revLines"), ("cost_lines", COSTLINE_FIELDS, "costLines"), ("construction_lines", CONSTR_FIELDS, "constrLines"),
+            ("loans", LOAN_FIELDS, "loans")]
+METRIC_FIELDS = [  # computed by the app on every save (read-only copies for querying)
+    ("loan", "loan_amount"), ("rate", "interest_rate"), ("term", "term_months"), ("ltv0", "ltv_market"), ("ltvFs0", "ltv_forced_sale"),
+    ("ltc", "ltc"), ("cover0", "collateral_cover"), ("maxLtvFs", "max_ltv_forced_sale"), ("minDscr", "min_dscr"), ("minDscr12", "min_dscr_12m"),
+    ("avgDscr", "avg_dscr"), ("minIcr", "min_icr"),
+    ("lowCash", "lowest_cash"), ("reserveNeed", "liquidity_reserve_need"), ("negMonths", "negative_cash_months"), ("interest", "interest_earned"),
+    ("fees", "fees"), ("gains", "fixed_capital_gains"), ("pshare", "profit_share"), ("profit", "lender_profit"), ("irr", "irr"),
+    ("simpleYield", "simple_yield"), ("multiple", "money_multiple"), ("headroom", "value_headroom"), ("collateral", "collateral_market_value"),
+    ("sizeMax", "max_loan_by_policy"), ("exitLTV", "exit_ltv"), ("paydown", "paydown_needed_at_exit"), ("flags", "flags"),
+    ("drawdown", "drawdown_date"), ("repaid", "repaid_date"), ("maturity", "maturity_date"),
+]
+
+
+def coltype(t):
+    return "TEXT" if t == "JSON" else t
+
+
+def cols(fields):
+    return ",\n  ".join(f"{c} {coltype(t)}" for _, c, t in fields)
+
+
+def child_table(table, fields):
+    return f"""CREATE TABLE IF NOT EXISTS {table} (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  position INTEGER NOT NULL,
+  {cols(fields)}
+);
+CREATE INDEX IF NOT EXISTS ix_{table}_p ON {table}(project_id, position);"""
+
+
+METRIC_COLS = ",\n  ".join(c + (" TEXT" if c.endswith("_date") else " REAL") for _, c in METRIC_FIELDS)
+CHILD_SQL = "\n".join(child_table(t, f) for t, f, _ in CHILDREN)
+
+SCHEMA = f"""
+CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS projects (
+  id TEXT PRIMARY KEY,
+  {cols(PROJECT_FIELDS)},
+  grid_row_driver TEXT, grid_col_driver TEXT, grid_row_values TEXT, grid_col_values TEXT
+);
+CREATE TABLE IF NOT EXISTS project_inputs (
+  project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+  {cols(INPUT_FIELDS)}
+);
+{CHILD_SQL}
+CREATE TABLE IF NOT EXISTS metrics (
+  project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+  {METRIC_COLS},
+  computed_at TEXT
+);
+CREATE TABLE IF NOT EXISTS versions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  label TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  data TEXT NOT NULL,
+  metrics TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_versions_p ON versions(project_id, created_at);
+CREATE TABLE IF NOT EXISTS documents (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  stored_name TEXT NOT NULL,
+  size INTEGER,
+  uploaded_at TEXT NOT NULL,
+  note TEXT
+);
+CREATE TABLE IF NOT EXISTS mail_messages (
+  gm_msgid TEXT PRIMARY KEY,
+  thrid TEXT NOT NULL,
+  date TEXT,
+  from_addr TEXT, from_name TEXT, to_addrs TEXT, cc_addrs TEXT,
+  subject TEXT, body TEXT, attachments TEXT,
+  initial INTEGER DEFAULT 0,
+  fetched_at TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_mail_thr ON mail_messages(thrid, date);
+CREATE TABLE IF NOT EXISTS mail_labels (
+  label TEXT NOT NULL, uidvalidity INTEGER NOT NULL, uid INTEGER NOT NULL, gm_msgid TEXT NOT NULL,
+  PRIMARY KEY (label, uid)
+);
+CREATE TABLE IF NOT EXISTS mail_allmail (
+  uidvalidity INTEGER NOT NULL, uid INTEGER NOT NULL, gm_msgid TEXT NOT NULL,
+  PRIMARY KEY (uidvalidity, uid)
+);
+CREATE TABLE IF NOT EXISTS mail_threads (
+  thrid TEXT PRIMARY KEY,
+  seen_at TEXT, handled_at TEXT,
+  waiting_for TEXT, waiting_until TEXT, waiting_set_at TEXT,
+  todo_text TEXT
+);
+CREATE TABLE IF NOT EXISTS mail_summaries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id TEXT NOT NULL,
+  text TEXT NOT NULL,
+  date TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS activity (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id TEXT,
+  project_name TEXT,
+  action TEXT NOT NULL,
+  at TEXT NOT NULL
+);
+"""
+
+VIEW_SQL = """
+DROP VIEW IF EXISTS deal_register;
+CREATE VIEW deal_register AS
+  SELECT p.id, p.name, p.status, p.borrower, p.country, p.project_type,
+         i.currency, m.drawdown_date, m.loan_amount, i.interest_rate_pct, i.term_months, i.repayment_type,
+         m.collateral_market_value, m.ltv_market, m.ltv_forced_sale, m.collateral_cover, m.ltc,
+         m.min_dscr, m.min_dscr_12m, m.lowest_cash, m.liquidity_reserve_need,
+         m.lender_profit, m.irr, m.simple_yield, m.exit_ltv, m.flags, m.repaid_date, m.maturity_date, p.updated_at
+  FROM projects p LEFT JOIN project_inputs i ON i.project_id = p.id LEFT JOIN metrics m ON m.project_id = p.id;
+"""
+
+LOCK = threading.Lock()
+LAST_SEEN = [0.0]
+
+
+def connect():
+    con = sqlite3.connect(DB_PATH, timeout=10)
+    con.row_factory = sqlite3.Row
+    con.execute("PRAGMA foreign_keys = ON")
+    con.execute("PRAGMA journal_mode = DELETE")
+    return con
+
+
+def migrate(con):
+    """Add any column the current version expects but an older database lacks."""
+    want = {"project_inputs": [(c, coltype(t)) for _, c, t in INPUT_FIELDS],
+            "projects": [(c, coltype(t).replace(" NOT NULL", "")) for _, c, t in PROJECT_FIELDS],
+            "versions": [("parent_id", "INTEGER"), ("updated_at", "TEXT")],
+            "metrics": [(c, "TEXT" if c.endswith("_date") else "REAL") for _, c in METRIC_FIELDS]}
+    for t, f, _ in CHILDREN:
+        want[t] = [(c, coltype(ty)) for _, c, ty in f]
+    for table, columns in want.items():
+        have = {r["name"] for r in con.execute(f"PRAGMA table_info({table})")}
+        for c, ty in columns:
+            if c not in have:
+                con.execute(f"ALTER TABLE {table} ADD COLUMN {c} {ty}")
+
+
+def init_db():
+    con = connect()
+    with con:
+        con.executescript(SCHEMA)
+        migrate(con)
+        if not con.execute("SELECT 1 FROM meta WHERE key='stages_v35'").fetchone():  # one-time: old statuses → pipeline stages
+            for r in con.execute("SELECT id, status FROM projects").fetchall():
+                con.execute("UPDATE projects SET status=? WHERE id=?", (map_stage(r["status"]), r["id"]))
+            con.execute("INSERT INTO meta(key, value) VALUES ('stages_v35', ?)", (now(),))
+        con.executescript(VIEW_SQL)
+        con.execute("INSERT OR REPLACE INTO meta(key, value) VALUES ('schema_version', ?)", (str(SCHEMA_VERSION),))
+    con.close()
+
+
+def now():
+    return dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+
+
+# ---------------------------------------------------------------------------
+# JSON <-> rows
+# ---------------------------------------------------------------------------
+FX_CACHE = {}
+ECB_URL = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml"
+
+
+def ecb_rates():
+    """ECB euro reference rates (units of currency per 1 EUR), cached for 6 hours."""
+    now = dt.datetime.now().timestamp()
+    if FX_CACHE.get("t", 0) > now - 6 * 3600:
+        return FX_CACHE["data"]
+    text = None
+    try:
+        import urllib.request
+        with urllib.request.urlopen(ECB_URL, timeout=8) as r:
+            text = r.read().decode("utf-8", "replace")
+    except Exception:
+        try:  # bundled Python may lack CA certificates; macOS curl uses the system keychain
+            import subprocess
+            text = subprocess.run(["/usr/bin/curl", "-s", "-m", "8", ECB_URL], capture_output=True, text=True, timeout=10).stdout
+        except Exception:
+            text = None
+    if not text or "currency=" not in text:
+        return {"ok": False, "error": "Could not reach the ECB. Enter the rate by hand."}
+    day = re.search(r"time=['\"](\d{4}-\d{2}-\d{2})['\"]", text)
+    rates = {c: float(v) for c, v in re.findall(r"currency=['\"]([A-Z]{3})['\"]\s+rate=['\"]([\d.]+)['\"]", text)}
+    data = {"ok": True, "date": day.group(1) if day else None, "rates": rates, "source": "ECB euro reference rates"}
+    FX_CACHE.update(t=now, data=data)
+    return data
+
+
+def get_key(obj, key):
+    for part in key.split("."):
+        if obj is None:
+            return None
+        if isinstance(obj, list):
+            obj = obj[int(part)] if part.isdigit() and int(part) < len(obj) else None
+        elif isinstance(obj, dict):
+            obj = obj.get(part)
+        else:
+            return None
+    return obj
+
+
+def to_db(v, typ):
+    if typ == "JSON":
+        return json.dumps(v) if isinstance(v, (list, dict)) else None
+    if v is None:
+        return None
+    if typ == "INTEGER":
+        return 1 if (v is True or v in (1, "1", "Yes", "yes", "true")) else 0
+    if isinstance(v, bool):
+        return int(v)
+    s = str(v).strip() if not isinstance(v, (int, float)) else v
+    return s  # "" is kept, so a field the user cleared stays blank (NULL = never set)
+
+
+def from_db(v, typ):
+    if typ == "JSON":
+        try:
+            return json.loads(v) if v else None
+        except ValueError:
+            return None
+    if typ == "INTEGER":
+        return bool(v) if v is not None else None
+    if v is None:
+        return None
+    if isinstance(v, float):
+        return str(int(v)) if v.is_integer() else repr(v)
+    return str(v)
+
+
+def save_project(con, pid, p):
+    p["status"] = map_stage(p.get("status"))
+    pr = [to_db(p.get(k), t) for k, _, t in PROJECT_FIELDS]
+    pr[0] = pr[0] or "Untitled project"
+    g = p.get("grid") or {}
+    exists = con.execute("SELECT 1 FROM projects WHERE id=?", (pid,)).fetchone()
+    names = [c for _, c, _ in PROJECT_FIELDS] + ["grid_row_driver", "grid_col_driver", "grid_row_values", "grid_col_values"]
+    vals = pr + [g.get("rowDriver"), g.get("colDriver"), json.dumps(g.get("rowVals") or []), json.dumps(g.get("colVals") or [])]
+    if exists:
+        con.execute(f"UPDATE projects SET {', '.join(n + '=?' for n in names)} WHERE id=?", vals + [pid])
+    else:
+        con.execute(f"INSERT INTO projects (id, {', '.join(names)}) VALUES (?{', ?' * len(names)})", [pid] + vals)
+    inp = p.get("inputs") or {}
+    icols = [c for _, c, _ in INPUT_FIELDS]
+    con.execute(f"INSERT OR REPLACE INTO project_inputs (project_id, {', '.join(icols)}) VALUES (?{', ?' * len(icols)})",
+                [pid] + [to_db(get_key(inp, k), t) for k, _, t in INPUT_FIELDS])
+    for table, fields, key in CHILDREN:
+        con.execute(f"DELETE FROM {table} WHERE project_id=?", (pid,))
+        fc = [c for _, c, _ in fields]
+        for pos, row in enumerate(p.get(key) or []):
+            if not isinstance(row, dict):
+                continue
+            con.execute(f"INSERT INTO {table} (project_id, position, {', '.join(fc)}) VALUES (?, ?{', ?' * len(fc)})",
+                        [pid, pos] + [to_db(row.get(k), t) for k, _, t in fields])
+    m = p.get("metrics")
+    if isinstance(m, dict):
+        mc = [c for _, c in METRIC_FIELDS]
+        con.execute(f"INSERT OR REPLACE INTO metrics (project_id, {', '.join(mc)}, computed_at) VALUES (?{', ?' * len(mc)}, ?)",
+                    [pid] + [m.get(k) if not isinstance(m.get(k), (dict, list)) else None for k, _ in METRIC_FIELDS] + [now()])
+    last = con.execute("SELECT action, at FROM activity WHERE project_id=? ORDER BY id DESC LIMIT 1", (pid,)).fetchone()
+    recent = last is not None and last["action"] in ("updated", "created") and \
+        (dt.datetime.now(dt.timezone.utc) - dt.datetime.fromisoformat(last["at"])).total_seconds() < 600
+    if not exists or not recent:
+        con.execute("INSERT INTO activity (project_id, project_name, action, at) VALUES (?, ?, ?, ?)",
+                    (pid, pr[0], "updated" if exists else "created", now()))
+
+
+def load_project(con, row):
+    pid = row["id"]
+    p = {"id": pid}
+    for k, c, t in PROJECT_FIELDS:
+        v = from_db(row[c], t)
+        p[k] = "" if v is None else v
+    p["grid"] = {"rowDriver": row["grid_row_driver"] or "rev", "colDriver": row["grid_col_driver"] or "rate",
+                 "rowVals": json.loads(row["grid_row_values"] or "[]") or ["-30", "-20", "-10", "0", "10"],
+                 "colVals": json.loads(row["grid_col_values"] or "[]") or ["0", "1", "2", "3", "4"]}
+    ir = con.execute("SELECT * FROM project_inputs WHERE project_id=?", (pid,)).fetchone()
+    inp = {"seasonality": ["1"] * 12}
+    if ir:
+        for k, c, t in INPUT_FIELDS:
+            v = from_db(ir[c], t)
+            if k.startswith("seasonality."):
+                inp["seasonality"][int(k.split(".")[1])] = v or "1"
+            elif v is not None:
+                inp[k] = v
+    p["inputs"] = inp
+    for table, fields, key in CHILDREN:
+        rows = []
+        for r in con.execute(f"SELECT * FROM {table} WHERE project_id=? ORDER BY position", (pid,)):
+            d = {}
+            for k, c, t in fields:
+                v = from_db(r[c], t)
+                if v is not None:
+                    d[k] = v
+            rows.append(d)
+        p[key] = rows
+    return p
+
+
+def all_projects():
+    con = connect()
+    try:
+        return [load_project(con, r) for r in con.execute("SELECT * FROM projects ORDER BY updated_at DESC")]
+    finally:
+        con.close()
+
+
+def backup(tag="manual"):
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    stamp = dt.datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    dest = os.path.join(BACKUP_DIR, f"deals_{stamp}_{tag}.sqlite")
+    src = connect()
+    dst = sqlite3.connect(dest)
+    with dst:
+        src.backup(dst)
+    dst.close()
+    src.close()
+    return dest
+
+
+def daily_backup():
+    if not os.path.exists(DB_PATH):
+        return
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    today = dt.date.today().isoformat()
+    if any(f.startswith(f"deals_{today}") and f.endswith("_daily.sqlite") for f in os.listdir(BACKUP_DIR)):
+        return
+    backup("daily")
+    daily = sorted(f for f in os.listdir(BACKUP_DIR) if f.endswith("_daily.sqlite"))
+    for f in daily[:-30]:
+        try:
+            os.remove(os.path.join(BACKUP_DIR, f))
+        except OSError:
+            pass
+
+
+def import_json(path, skip_existing=False):
+    with open(path, encoding="utf-8") as fh:
+        data = json.load(fh)
+    items = [data] if isinstance(data, dict) and "inputs" in data else (list(data.values()) if isinstance(data, dict) else data)
+    con = connect()
+    n = 0
+    with LOCK, con:
+        for p in items:
+            if not isinstance(p, dict) or "inputs" not in p:
+                continue
+            pid = p.get("id") or ("p" + uuid.uuid4().hex[:12])
+            exists = con.execute("SELECT 1 FROM projects WHERE id=?", (pid,)).fetchone()
+            if exists and p.get("_appendVersions"):  # add versions to an existing project without touching its inputs
+                for v in p.get("_versions") or []:
+                    con.execute("INSERT INTO versions (project_id, label, created_at, data, metrics, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                                (pid, v.get("label") or "Version", now(), json.dumps(v.get("data") or {}), json.dumps(v.get("metrics")), now()))
+                n += 1
+                continue
+            if exists and p.get("_appendEmails"):  # add email material without touching the model inputs
+                append_emails(con, pid, p)
+                n += 1
+                continue
+            if skip_existing and not p.get("_replace") and exists:
+                continue
+            p.setdefault("createdAt", now())
+            p.setdefault("updatedAt", now())
+            save_project(con, pid, p)
+            for v in p.get("_versions") or []:
+                con.execute("INSERT INTO versions (project_id, label, created_at, data, metrics) VALUES (?, ?, ?, ?, ?)",
+                            (pid, v.get("label") or "Version", now(), json.dumps(v.get("data") or {}), json.dumps(v.get("metrics"))))
+            n += 1
+    con.close()
+    return n
+
+
+def append_emails(con, pid, p):
+    """_appendEmails: email summary, new open items, extra source tags (attached files are no longer stored).
+    The model inputs are not touched."""
+    sm = p.get("_emailSummary")
+    if isinstance(sm, str):
+        sm = {"text": sm}
+    if isinstance(sm, dict) and (sm.get("text") or "").strip():
+        con.execute("INSERT INTO mail_summaries (project_id, text, date, created_at) VALUES (?, ?, ?, ?)",
+                    (pid, sm["text"].strip(), str(sm.get("date") or "")[:10] or None, now()))
+    todos = [t for t in (p.get("_todos") or p.get("todos") or []) if isinstance(t, dict) and (t.get("text") or "").strip()]
+    if todos:
+        have = {(r["text"] or "").strip().lower() for r in con.execute("SELECT text FROM todos WHERE project_id=?", (pid,))}
+        pos = con.execute("SELECT COALESCE(MAX(position), -1) FROM todos WHERE project_id=?", (pid,)).fetchone()[0]
+        fc = [c for _, c, _ in TODO_FIELDS]
+        for t in todos:
+            if t["text"].strip().lower() in have:
+                continue
+            have.add(t["text"].strip().lower())  # also skips repeats within the same file
+            pos += 1
+            t = dict({"done": False, "category": "Open item"}, **t)
+            con.execute(f"INSERT INTO todos (project_id, position, {', '.join(fc)}) VALUES (?, ?{', ?' * len(fc)})",
+                        [pid, pos] + [to_db(t.get(k), ty) for k, _, ty in TODO_FIELDS])
+    src = p.get("_sources") or (p.get("inputs") or {}).get("sources")
+    if isinstance(src, dict) and src:
+        r = con.execute("SELECT field_sources FROM project_inputs WHERE project_id=?", (pid,)).fetchone()
+        cur = json.loads(r["field_sources"] or "{}") if r else {}
+        cur.update(src)
+        con.execute("UPDATE project_inputs SET field_sources=? WHERE project_id=?", (json.dumps(cur), pid))
+    con.execute("UPDATE projects SET updated_at=? WHERE id=?", (now(), pid))
+
+
+def auto_import():
+    """Import each JSON file dropped in <data>/import once (projects whose id already exists are left alone)."""
+    d = os.path.join(DATA, "import")
+    if not os.path.isdir(d):
+        return
+    con = connect()
+    done = {r["key"] for r in con.execute("SELECT key FROM meta WHERE key LIKE 'imported:%'")}
+    con.close()
+    for f in sorted(os.listdir(d)):
+        if not f.endswith(".json") or f"imported:{f}" in done:
+            continue
+        try:
+            n = import_json(os.path.join(d, f), skip_existing=True)
+            print(f"Imported {n} project(s) from {f}", flush=True)
+        except (OSError, ValueError) as e:
+            print(f"Could not import {f}: {e}", flush=True)
+            continue
+        con = connect()
+        with con:
+            con.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)", (f"imported:{f}", now()))
+        con.close()
+
+
+def safe_name(name):
+    name = os.path.basename(name or "file").strip().replace("\x00", "")
+    name = re.sub(r"[^\w.\- ()&+,]", "_", name)[:150]
+    return name or "file"
+
+
+# ---------------------------------------------------------------------------
+# Email (read-only Gmail over IMAP). The app password lives in the macOS Keychain
+# (via /usr/bin/security), never in SQLite or files. Mailboxes are opened with
+# EXAMINE and bodies fetched with BODY.PEEK, so nothing is ever marked as read.
+# ---------------------------------------------------------------------------
+import base64
+import email
+import email.policy
+import email.utils
+import email.header
+import html as htmlmod
+import imaplib
+import ssl
+import subprocess
+
+KC_SERVICE = "Deal Desk Gmail"
+FAKE_KC = {}  # only used when DEALDESK_FAKE_KEYCHAIN is set (tests on machines without a Keychain)
+MAIL_LOCK = threading.Lock()
+HANDLED_AFTER_DAYS = 14   # first sync of a label: threads quiet for longer are marked handled
+EXPAND_DAYS = 120         # threads active in this window are completed from All Mail (your replies)
+TEXT_LIMIT = 400_000      # bytes of message text fetched per message (attachments are listed, not downloaded)
+
+
+def meta_get(con, key, default=None):
+    r = con.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
+    return r["value"] if r else default
+
+
+def meta_set(con, key, value):
+    con.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)", (key, value))
+
+
+def kc_available():
+    return bool(os.environ.get("DEALDESK_FAKE_KEYCHAIN")) or os.path.exists("/usr/bin/security")
+
+
+def kc_get(account):
+    if os.environ.get("DEALDESK_FAKE_KEYCHAIN"):
+        return FAKE_KC.get(account)
+    if not account or not os.path.exists("/usr/bin/security"):
+        return None
+    r = subprocess.run(["/usr/bin/security", "find-generic-password", "-a", account, "-s", KC_SERVICE, "-w"],
+                       capture_output=True, text=True, timeout=15)
+    return r.stdout.rstrip("\n") if r.returncode == 0 and r.stdout.strip() else None
+
+
+def kc_set(account, password):
+    if os.environ.get("DEALDESK_FAKE_KEYCHAIN"):
+        FAKE_KC[account] = password
+        return
+    r = subprocess.run(["/usr/bin/security", "add-generic-password", "-U", "-a", account, "-s", KC_SERVICE,
+                        "-l", KC_SERVICE, "-w", password], capture_output=True, text=True, timeout=15)
+    if r.returncode != 0:
+        raise RuntimeError("Could not save the password in the Keychain: " + (r.stderr.strip() or str(r.returncode)))
+
+
+def kc_delete(account):
+    if os.environ.get("DEALDESK_FAKE_KEYCHAIN"):
+        FAKE_KC.pop(account, None)
+        return
+    if os.path.exists("/usr/bin/security"):
+        subprocess.run(["/usr/bin/security", "delete-generic-password", "-a", account, "-s", KC_SERVICE], capture_output=True, timeout=15)
+
+
+# --- IMAP mailbox names use "modified UTF-7" (RFC 3501 5.1.3)
+def mutf7_encode(s):
+    out, buf = [], []
+
+    def flush():
+        if buf:
+            b = base64.b64encode("".join(buf).encode("utf-16-be")).decode().rstrip("=").replace("/", ",")
+            out.append("&" + b + "-")
+            buf.clear()
+    for ch in s:
+        if 0x20 <= ord(ch) <= 0x7E:
+            flush()
+            out.append("&-" if ch == "&" else ch)
+        else:
+            buf.append(ch)
+    flush()
+    return "".join(out)
+
+
+def mutf7_decode(s):
+    def dec(m):
+        b = m.group(1)
+        if not b:
+            return "&"
+        b = b.replace(",", "/")
+        return base64.b64decode(b + "=" * (-len(b) % 4)).decode("utf-16-be")
+    return re.sub(r"&([^-]*)-", dec, s)
+
+
+def imap_quote(name):
+    return '"' + mutf7_encode(name).replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def ssl_context():
+    ctx = ssl.create_default_context()
+    # the bundled Python may not know where macOS keeps its root certificates
+    for cafile in ("/etc/ssl/cert.pem",):
+        if os.path.exists(cafile):
+            try:
+                ctx.load_verify_locations(cafile)
+            except (ssl.SSLError, OSError):
+                pass
+    if ctx.cert_store_stats().get("x509_ca", 0) == 0 and os.path.exists("/usr/bin/security"):
+        pem = os.path.join(DATA, "runtime", "macos-roots.pem")
+        if not os.path.exists(pem):
+            os.makedirs(os.path.dirname(pem), exist_ok=True)
+            r = subprocess.run(["/usr/bin/security", "find-certificate", "-a", "-p",
+                                "/System/Library/Keychains/SystemRootCertificates.keychain"], capture_output=True, timeout=30)
+            if r.returncode == 0 and r.stdout:
+                with open(pem, "wb") as fh:
+                    fh.write(r.stdout)
+        if os.path.exists(pem):
+            ctx.load_verify_locations(pem)
+    return ctx
+
+
+class MailError(Exception):
+    pass
+
+
+def imap_connect(address):
+    pw = kc_get(address)
+    if not pw:
+        raise MailError("No app password saved for this address. Add it in Email settings.")
+    host = os.environ.get("DEALDESK_IMAP_HOST", "imap.gmail.com")
+    port = int(os.environ.get("DEALDESK_IMAP_PORT", "993"))
+    try:
+        if os.environ.get("DEALDESK_IMAP_PLAIN"):  # tests only (local fake server)
+            con = imaplib.IMAP4(host, port)
+        else:
+            con = imaplib.IMAP4_SSL(host, port, ssl_context=ssl_context(), timeout=30)
+    except (OSError, ssl.SSLError) as e:
+        raise MailError(f"Could not reach Gmail ({e}). Check the internet connection.")
+    try:
+        con.login(address, pw.replace(" ", ""))
+    except imaplib.IMAP4.error as e:
+        raise MailError("Gmail refused the login. Check the address and the app password, and that IMAP is enabled in Gmail settings. (" +
+                        str(e)[:120] + ")")
+    return con
+
+
+LIST_RE = re.compile(rb'\((?P<flags>[^)]*)\) (?P<delim>"(?:[^"\\]|\\.)*"|NIL) (?P<name>.*)$')
+
+
+def imap_list(con):
+    """[(name, flags)] with names decoded from modified UTF-7."""
+    typ, data = con.list()
+    out = []
+    pending = None
+    for item in data or []:
+        if isinstance(item, tuple):  # name sent as a literal
+            m = LIST_RE.match(item[0].split(b"{")[0].rstrip() + b" X")
+            if m:
+                out.append((mutf7_decode(item[1].decode("utf-8", "replace")), m.group("flags").decode()))
+            continue
+        if not item:
+            continue
+        m = LIST_RE.match(item)
+        if not m:
+            continue
+        raw = m.group("name").strip()
+        if raw.startswith(b'"') and raw.endswith(b'"'):
+            raw = raw[1:-1].replace(b'\\"', b'"').replace(b"\\\\", b"\\")
+        out.append((mutf7_decode(raw.decode("utf-8", "replace")), m.group("flags").decode()))
+    return out
+
+
+def examine(con, mailbox):
+    typ, data = con.select(imap_quote(mailbox), readonly=True)  # EXAMINE: read-only
+    if typ != "OK":
+        raise MailError(f"Could not open {mailbox}")
+    uv = con.response("UIDVALIDITY")[1]
+    return int(uv[0]) if uv and uv[0] else 0
+
+
+def uid_search(con, *criteria):
+    typ, data = con.uid("SEARCH", None, *criteria)
+    if typ != "OK" or not data or not data[0]:
+        return []
+    return [int(x) for x in data[0].split()]
+
+
+def uid_ranges(uids):
+    uids = sorted(uids)
+    out, start, prev = [], None, None
+    for u in uids:
+        if start is None:
+            start = prev = u
+        elif u == prev + 1:
+            prev = u
+        else:
+            out.append(f"{start}:{prev}" if start != prev else str(start))
+            start = prev = u
+    if start is not None:
+        out.append(f"{start}:{prev}" if start != prev else str(start))
+    return ",".join(out)
+
+
+def parse_fetch(data):
+    """imaplib FETCH data → list of dicts {uid, msgid, thrid, header, text, meta}."""
+    msgs, cur = [], None
+    for item in data or []:
+        meta = item[0] if isinstance(item, tuple) else item
+        if not isinstance(meta, (bytes, bytearray)):
+            continue
+        if re.match(rb"^\d+ \(", meta):
+            cur = {"meta": b"", "header": b"", "text": b""}
+            msgs.append(cur)
+        if cur is None:
+            continue
+        cur["meta"] += meta + b" "
+        if isinstance(item, tuple):
+            if b"BODY[HEADER]" in meta:
+                cur["header"] = item[1]
+            elif b"BODY[TEXT]" in meta:
+                cur["text"] = item[1]
+    for m in msgs:
+        meta = m["meta"]
+        for k, pat in (("uid", rb"UID (\d+)"), ("msgid", rb"X-GM-MSGID (\d+)"), ("thrid", rb"X-GM-THRID (\d+)")):
+            r = re.search(pat, meta)
+            m[k] = r.group(1).decode() if r else None
+        if m["uid"]:
+            m["uid"] = int(m["uid"])
+        names = re.findall(rb'"(?:FILENAME|NAME|filename|name)" "((?:[^"\\]|\\.)*)"', meta)
+        m["bsnames"] = [decode_words(n.decode("utf-8", "replace")) for n in names]
+    return msgs
+
+
+def decode_words(s):
+    try:
+        return str(email.header.make_header(email.header.decode_header(s)))
+    except Exception:
+        return s
+
+
+def html_to_text(h):
+    h = re.sub(r"(?is)<(script|style|head)[^>]*>.*?</\1>", "", h)
+    h = re.sub(r"(?i)<br\s*/?>", "\n", h)
+    h = re.sub(r"(?i)</(p|div|tr|li|h\d|blockquote)>", "\n", h)
+    h = re.sub(r"(?i)<blockquote[^>]*>", "\n> ", h)
+    h = re.sub(r"<[^>]+>", "", h)
+    h = htmlmod.unescape(h)
+    h = re.sub(r"[ \t\xa0]+\n", "\n", h)
+    return re.sub(r"\n{3,}", "\n\n", h).strip()
+
+
+def parse_message(header, text, bsnames):
+    msg = email.message_from_bytes(header + b"\r\n" + text, policy=email.policy.default)
+    body_plain, body_html, atts = None, None, []
+    for part in msg.walk():
+        if part.is_multipart():
+            continue
+        fn = part.get_filename()
+        disp = (part.get("Content-Disposition") or "").lower()
+        ctype = part.get_content_type()
+        if fn or disp.startswith("attachment"):
+            if fn:
+                atts.append(decode_words(fn))
+            continue
+        try:
+            content = part.get_content()
+        except Exception:
+            try:
+                content = (part.get_payload(decode=True) or b"").decode("utf-8", "replace")
+            except Exception:
+                content = ""
+        if not isinstance(content, str):
+            continue
+        if ctype == "text/plain" and body_plain is None:
+            body_plain = content
+        elif ctype == "text/html" and body_html is None:
+            body_html = content
+    body = body_plain if body_plain and body_plain.strip() else html_to_text(body_html or "")
+    for n in bsnames:
+        if n and n not in atts:
+            atts.append(n)
+    frm = email.utils.parseaddr(str(msg.get("From") or ""))
+    try:
+        d = email.utils.parsedate_to_datetime(str(msg.get("Date")))
+        if d.tzinfo is None:
+            d = d.replace(tzinfo=dt.timezone.utc)
+        date = d.astimezone(dt.timezone.utc).isoformat(timespec="seconds")
+    except Exception:
+        date = now()
+    addrs = lambda h: ", ".join(f"{n} <{a}>" if n else a for n, a in email.utils.getaddresses([str(x) for x in msg.get_all(h, [])]))
+    return {"date": date, "from_addr": (frm[1] or "").lower(), "from_name": decode_words(frm[0] or ""), "to_addrs": addrs("To"),
+            "cc_addrs": addrs("Cc"), "subject": decode_words(str(msg.get("Subject") or "")), "body": (body or "").replace("\r\n", "\n")[:200_000],
+            "attachments": json.dumps(atts)}
+
+
+FETCH_ITEMS = f"(UID X-GM-MSGID X-GM-THRID BODYSTRUCTURE BODY.PEEK[HEADER] BODY.PEEK[TEXT]<0.{TEXT_LIMIT}>)"
+
+
+def fetch_store(con, imap, uids, initial):
+    """Fetch new messages by UID (current mailbox) and store the ones not stored yet. Returns {uid: msgid}.
+    Network reads happen outside the database lock; each batch of 20 is written in one short transaction."""
+    got = {}
+    uids = sorted(uids)
+    for i in range(0, len(uids), 20):
+        typ, data = imap.uid("FETCH", uid_ranges(uids[i:i + 20]), FETCH_ITEMS)
+        if typ != "OK":
+            continue
+        rows = []
+        for m in parse_fetch(data):
+            if not m["uid"] or not m["msgid"]:
+                continue
+            got[m["uid"]] = m["msgid"]
+            r = parse_message(m["header"], m["text"], m["bsnames"])
+            rows.append((m["msgid"], m["thrid"], r["date"], r["from_addr"], r["from_name"], r["to_addrs"], r["cc_addrs"], r["subject"],
+                         r["body"], r["attachments"], 1 if initial else 0, now()))
+        with LOCK, con:
+            con.executemany("""INSERT OR IGNORE INTO mail_messages (gm_msgid, thrid, date, from_addr, from_name, to_addrs, cc_addrs, subject, body, attachments, initial, fetched_at)
+                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", rows)
+    return got
+
+
+def norm_name(s):
+    import unicodedata
+    s = unicodedata.normalize("NFKD", s or "")
+    s = "".join(c for c in s if not unicodedata.combining(c)).lower().replace("ł", "l").replace("ø", "o")
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", s).split())
+
+
+def match_label(name, labels):
+    """Best Gmail label for a project name. Compares the last part of each label (after the last "/"), ignoring
+    accents, case and punctuation, so "New deals/Tarnowskie Gory" matches "Tarnowskie Góry castle complex" and the
+    match survives moving the label between parent folders. Exact matches beat prefix matches; the longest wins."""
+    full, short = norm_name(name), norm_name((name or "").split(",")[0])
+    best, score = None, 0
+    for lb in labels:
+        leaf = norm_name(lb.split("/")[-1])
+        if len(leaf) < 2:
+            continue
+        sc = 0
+        if leaf in (full, short):
+            sc = 1000 + len(leaf)
+        elif len(leaf) >= 4 and (full.startswith(leaf + " ") or short.startswith(leaf + " ")):
+            sc = 500 + len(leaf)
+        elif len(short) >= 4 and leaf.startswith(short + " "):
+            sc = 300 + len(short)
+        if sc > score:
+            best, score = lb, sc
+    return best
+
+
+def project_labels(con, labels=None):
+    """{project id: label}. inputs.gmailLabel wins; otherwise the label that matches the project name (see match_label)."""
+    names = labels if labels is not None else json.loads(meta_get(con, "mail_label_list", "[]") or "[]")
+    out = {}
+    for r in con.execute("SELECT p.id, p.name, i.gmail_label FROM projects p LEFT JOIN project_inputs i ON i.project_id = p.id"):
+        if r["gmail_label"]:
+            out[r["id"]] = r["gmail_label"]
+            continue
+        m = match_label(r["name"], names)
+        if m:
+            out[r["id"]] = m
+    return out
+
+
+def msg_count(con):
+    return con.execute("SELECT COUNT(*) FROM mail_messages").fetchone()[0]
+
+
+def mail_refresh():
+    """Sync every label linked to a project. Only new messages are fetched. Read-only on the Gmail side."""
+    with MAIL_LOCK:
+        con = connect()
+        try:
+            address = meta_get(con, "mail_address")
+            if not address:
+                raise MailError("Add your Gmail address and app password in Email settings first.")
+            imap = imap_connect(address)
+            before = msg_count(con)
+            stats = {"labels": 0}
+            try:
+                boxes = imap_list(imap)
+                labels = sorted(n for n, f in boxes if "\\Noselect" not in f and not n.startswith("[Gmail]") and n != "INBOX")
+                allmail = next((n for n, f in boxes if "\\All" in f), "[Gmail]/All Mail")
+                with LOCK, con:
+                    meta_set(con, "mail_label_list", json.dumps(labels))
+                links = project_labels(con, labels)
+                expand = set()
+                cutoff = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=EXPAND_DAYS)).isoformat(timespec="seconds")
+                for label in sorted(set(links.values())):
+                    if label not in labels:
+                        continue
+                    stats["labels"] += 1
+                    uv = examine(imap, label)
+                    uids = set(uid_search(imap, "ALL"))
+                    first = not con.execute("SELECT 1 FROM meta WHERE key=?", ("mail_synced:" + label,)).fetchone()
+                    with LOCK, con:
+                        con.execute("DELETE FROM mail_labels WHERE label=? AND uidvalidity<>?", (label, uv))
+                        known = {r["uid"] for r in con.execute("SELECT uid FROM mail_labels WHERE label=?", (label,))}
+                        gone = known - uids
+                        if gone:
+                            con.executemany("DELETE FROM mail_labels WHERE label=? AND uid=?", [(label, u) for u in gone])
+                    got = fetch_store(con, imap, uids - known, first)
+                    with LOCK, con:
+                        con.executemany("INSERT OR REPLACE INTO mail_labels (label, uidvalidity, uid, gm_msgid) VALUES (?, ?, ?, ?)",
+                                        [(label, uv, u, mid) for u, mid in got.items()])
+                        if first:
+                            meta_set(con, "mail_synced:" + label, now())
+                    for r in con.execute("""SELECT m.thrid, MAX(m.date) d FROM mail_labels l JOIN mail_messages m ON m.gm_msgid = l.gm_msgid
+                                            WHERE l.label=? GROUP BY m.thrid""", (label,)).fetchall():
+                        if r["d"] and r["d"] >= cutoff:
+                            expand.add((r["thrid"], first))
+                # complete threads from All Mail, so your own replies (and messages outside the label) count
+                if expand:
+                    uv = examine(imap, allmail)
+                    with LOCK, con:
+                        con.execute("DELETE FROM mail_allmail WHERE uidvalidity<>?", (uv,))
+                    known = {r["uid"] for r in con.execute("SELECT uid FROM mail_allmail")}
+                    for thrid, first in sorted(expand):
+                        new = set(uid_search(imap, "X-GM-THRID", thrid)) - known
+                        if not new:
+                            continue
+                        got = {}
+                        typ, data = imap.uid("FETCH", uid_ranges(new), "(UID X-GM-MSGID)")  # ids first; bodies only for messages not stored yet
+                        for m in parse_fetch(data if typ == "OK" else []):
+                            if m["uid"] and m["msgid"] and con.execute("SELECT 1 FROM mail_messages WHERE gm_msgid=?", (m["msgid"],)).fetchone():
+                                got[m["uid"]] = m["msgid"]
+                        got.update(fetch_store(con, imap, new - set(got), first))
+                        with LOCK, con:
+                            con.executemany("INSERT OR REPLACE INTO mail_allmail (uidvalidity, uid, gm_msgid) VALUES (?, ?, ?)",
+                                            [(uv, u, mid) for u, mid in got.items()])
+                        known |= set(got)
+                # first sync: quiet threads start as handled, so old mail does not show up as "reply owed"
+                with LOCK, con:
+                    old = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=HANDLED_AFTER_DAYS)).isoformat(timespec="seconds")
+                    for r in con.execute("""SELECT thrid, MAX(date) d FROM mail_messages WHERE thrid IN
+                                            (SELECT thrid FROM mail_messages GROUP BY thrid HAVING MIN(initial) = 1) GROUP BY thrid""").fetchall():
+                        if r["d"] and r["d"] < old and not con.execute("SELECT 1 FROM mail_threads WHERE thrid=?", (r["thrid"],)).fetchone():
+                            con.execute("INSERT INTO mail_threads (thrid, handled_at) VALUES (?, ?)", (r["thrid"], r["d"]))
+                    meta_set(con, "mail_last_refresh", now())
+                    meta_set(con, "mail_last_error", "")
+            finally:
+                try:
+                    imap.logout()
+                except Exception:
+                    pass
+            stats["new"] = msg_count(con) - before
+            return stats
+        except MailError as e:
+            with LOCK, con:
+                meta_set(con, "mail_last_error", str(e))
+            raise
+        finally:
+            con.close()
+
+
+# --- thread status
+def workdays_between(a, b):
+    """Working days (Mon–Fri) from date a to date b: Monday → Wednesday = 2."""
+    if b <= a:
+        return 0
+    n, d = 0, a
+    while d < b:
+        d += dt.timedelta(days=1)
+        if d.weekday() < 5:
+            n += 1
+    return n
+
+
+def local_date(iso):
+    try:
+        return dt.datetime.fromisoformat(iso).astimezone().date()
+    except Exception:
+        return dt.date.today()
+
+
+def my_addresses(con):
+    a = [meta_get(con, "mail_address") or ""] + [x.strip() for x in (meta_get(con, "mail_aliases") or "").split(",")]
+    return {x.lower() for x in a if x}
+
+
+def gmail_link(address, thrid):
+    try:
+        return f"https://mail.google.com/mail/?authuser={quote(address or '')}#all/{int(thrid):x}"
+    except ValueError:
+        return "https://mail.google.com/"
+
+
+def thread_summary(con, thrid, me, address, today=None):
+    msgs = con.execute("SELECT gm_msgid, date, from_addr, from_name, to_addrs, cc_addrs, subject, initial, fetched_at FROM mail_messages WHERE thrid=? ORDER BY date, gm_msgid", (thrid,)).fetchall()
+    if not msgs:
+        return None
+    st = con.execute("SELECT * FROM mail_threads WHERE thrid=?", (thrid,)).fetchone()
+    st = dict(st) if st else {}
+    today = today or dt.date.today()
+    last = msgs[-1]
+    incoming = [m for m in msgs if m["from_addr"] not in me]
+    last_in = incoming[-1] if incoming else None
+    if st.get("handled_at") and (not last_in or last_in["date"] <= st["handled_at"]):
+        status = "handled"
+    elif st.get("waiting_set_at") and (not last_in or last_in["date"] <= st["waiting_set_at"]):
+        status = "waiting"
+    elif last["from_addr"] in me:
+        status = "waiting"
+    elif workdays_between(local_date(last["date"]), today) >= 2:
+        status = "reply owed"
+    else:
+        status = "new"
+    unseen = any(not m["initial"] and (not st.get("seen_at") or (m["fetched_at"] or "") > st["seen_at"]) for m in incoming)
+    people = []
+    for m in msgs:
+        n = m["from_name"] or m["from_addr"]
+        if m["from_addr"] in me:
+            n = "me"
+        if n and n not in people:
+            people.append(n)
+    subj = next((m["subject"] for m in msgs if m["subject"]), "(no subject)")
+    explicit_wait = bool(st.get("waiting_set_at")) and status == "waiting" and (not last_in or last_in["date"] <= st["waiting_set_at"])
+    return {"thrid": thrid, "subject": subj, "people": people, "count": len(msgs), "lastDate": last["date"], "lastFrom": "me" if last["from_addr"] in me else (last["from_name"] or last["from_addr"]),
+            "status": status, "unseen": unseen, "waitingFor": st.get("waiting_for") if explicit_wait else ("reply from " + (people[0] if people and people[0] != "me" else "them") if status == "waiting" else None),
+            "waitingUntil": st.get("waiting_until") if explicit_wait else None, "handledAt": st.get("handled_at"), "todo": st.get("todo_text"),
+            "link": gmail_link(address, thrid)}
+
+
+def project_threads(con, pid, links=None):
+    links = links if links is not None else project_labels(con)
+    label = links.get(pid)
+    if not label:
+        return label, []
+    me, address = my_addresses(con), meta_get(con, "mail_address")
+    thrids = [r["thrid"] for r in con.execute("""SELECT DISTINCT m.thrid FROM mail_labels l JOIN mail_messages m ON m.gm_msgid = l.gm_msgid WHERE l.label=?""", (label,))]
+    out = [t for t in (thread_summary(con, x, me, address) for x in thrids) if t]
+    out.sort(key=lambda t: t["lastDate"] or "", reverse=True)
+    return label, out
+
+
+def mail_overview():
+    con = connect()
+    try:
+        links = project_labels(con)
+        res = {"configured": bool(meta_get(con, "mail_address")), "lastRefresh": meta_get(con, "mail_last_refresh"),
+               "lastError": meta_get(con, "mail_last_error") or "", "projects": {}, "owed": [], "waitingDue": []}
+        today = dt.date.today().isoformat()
+        for pid in links:
+            label, ts = project_threads(con, pid, links)
+            res["projects"][pid] = {"label": label, "threads": len(ts), "new": sum(1 for t in ts if t["unseen"]),
+                                    "owed": sum(1 for t in ts if t["status"] == "reply owed")}
+            for t in ts:
+                if t["status"] == "reply owed":
+                    res["owed"].append(dict(t, project=pid))
+                if t["status"] == "waiting" and t["waitingUntil"] and t["waitingUntil"] <= today:
+                    res["waitingDue"].append(dict(t, project=pid))
+        return res
+    finally:
+        con.close()
+
+
+def thread_messages(con, thrid):
+    rows = con.execute("SELECT * FROM mail_messages WHERE thrid=? ORDER BY date, gm_msgid", (thrid,)).fetchall()
+    me = my_addresses(con)
+    return [{"id": r["gm_msgid"], "date": r["date"], "from": r["from_name"] or r["from_addr"], "fromAddr": r["from_addr"], "me": r["from_addr"] in me,
+             "to": r["to_addrs"], "cc": r["cc_addrs"], "subject": r["subject"], "body": r["body"] or "", "attachments": json.loads(r["attachments"] or "[]")}
+            for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# HTTP
+# ---------------------------------------------------------------------------
+class Handler(BaseHTTPRequestHandler):
+    server_version = "DealDesk/2.0"
+
+    def log_message(self, fmt, *args):
+        pass
+
+    def send_json(self, obj, code=200):
+        body = json.dumps(obj).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def raw_body(self, limit=10 * 1024 * 1024):
+        n = int(self.headers.get("Content-Length") or 0)
+        if n > limit:
+            raise ValueError("too large")
+        return self.rfile.read(n) if n else b""
+
+    def body(self):
+        return json.loads(self.raw_body() or b"{}")
+
+    def same_origin(self):
+        host = (self.headers.get("Host") or "").split(":")[0]
+        origin = self.headers.get("Origin")
+        return host in ("127.0.0.1", "localhost") and (origin is None or urlparse(origin).hostname in ("127.0.0.1", "localhost"))
+
+    def send_file(self, fp, ctype, disposition=None):
+        size = os.path.getsize(fp)
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(size))
+        self.send_header("Cache-Control", "no-store")
+        if disposition:
+            self.send_header("Content-Disposition", disposition)
+        self.end_headers()
+        with open(fp, "rb") as fh:
+            while True:
+                chunk = fh.read(1 << 16)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+
+    def handle_one_request(self):
+        import time
+        LAST_SEEN[0] = time.time()
+        return super().handle_one_request()
+
+    def do_GET(self):
+        url = urlparse(self.path)
+        path = url.path
+        if path == "/api/ping":
+            return self.send_json({"ok": True, "app": "deal-desk", "version": APP_VERSION})
+        if path in STATIC:
+            fn, ctype = STATIC[path]
+            fp = os.path.join(HERE, fn)
+            if not os.path.exists(fp):
+                return self.send_json({"error": f"{fn} missing"}, 404)
+            return self.send_file(fp, ctype)
+        if not self.same_origin():
+            return self.send_json({"error": "forbidden"}, 403)
+        if path == "/api/fx":
+            return self.send_json(ecb_rates())
+        if path.startswith("/api/mail/"):
+            return self.mail_get(path, parse_qs(url.query))
+        if path == "/api/projects":
+            auto_import()  # picks up files dropped into <data>/import while the app is running
+            return self.send_json(all_projects())
+        if path == "/api/info":
+            backups = sorted(os.listdir(BACKUP_DIR)) if os.path.isdir(BACKUP_DIR) else []
+            return self.send_json({"db": DB_PATH, "size": os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else 0,
+                                   "backups": len(backups), "lastBackup": backups[-1] if backups else None, "schema": SCHEMA_VERSION})
+        m = re.match(r"^/api/projects/([^/]+)/(versions)$", path)
+        if m:
+            pid, what = m.group(1), m.group(2)
+            con = connect()
+            try:
+                rows = [{"id": r["id"], "label": r["label"], "createdAt": r["created_at"], "data": json.loads(r["data"]),
+                             "metrics": json.loads(r["metrics"] or "null"), "parentId": r["parent_id"], "updatedAt": r["updated_at"] or r["created_at"]}
+                            for r in con.execute("SELECT * FROM versions WHERE project_id=? ORDER BY created_at DESC, id DESC", (pid,))]
+            finally:
+                con.close()
+            return self.send_json(rows)
+        self.send_json({"error": "not found"}, 404)
+
+    # ---- email (read-only Gmail)
+    def mail_get(self, path, q):
+        con = connect()
+        try:
+            if path == "/api/mail/settings":
+                a = meta_get(con, "mail_address") or ""
+                return self.send_json({"address": a, "aliases": meta_get(con, "mail_aliases") or "", "hasPassword": bool(a and kc_get(a)),
+                                       "keychain": kc_available(), "lastRefresh": meta_get(con, "mail_last_refresh"),
+                                       "lastError": meta_get(con, "mail_last_error") or ""})
+            if path == "/api/mail/labels":
+                return self.send_json({"labels": json.loads(meta_get(con, "mail_label_list", "[]") or "[]"), "links": project_labels(con)})
+            if path == "/api/mail/overview":
+                con.close()
+                return self.send_json(mail_overview())
+            m = re.match(r"^/api/mail/project/([^/]+)$", path)
+            if m:
+                label, threads = project_threads(con, m.group(1))
+                sm = con.execute("SELECT text, date, created_at FROM mail_summaries WHERE project_id=? ORDER BY COALESCE(date, created_at) DESC, id DESC LIMIT 1",
+                                 (m.group(1),)).fetchone()
+                return self.send_json({"label": label, "threads": threads, "summary": dict(sm) if sm else None,
+                                       "configured": bool(meta_get(con, "mail_address")), "lastRefresh": meta_get(con, "mail_last_refresh"),
+                                       "lastError": meta_get(con, "mail_last_error") or ""})
+            m = re.match(r"^/api/mail/thread/(\d+)$", path)
+            if m:
+                t = thread_summary(con, m.group(1), my_addresses(con), meta_get(con, "mail_address"))
+                return self.send_json({"thread": t, "messages": thread_messages(con, m.group(1))})
+            if path == "/api/mail/find":  # source tag "Email" → thread containing the snippet
+                pid, needle = (q.get("pid") or [""])[0], (q.get("q") or [""])[0].strip()
+                label, threads = project_threads(con, pid)
+                ids = [t["thrid"] for t in threads]
+                hit = None
+                if needle and ids:
+                    words = re.sub(r"\s+", " ", needle.lower())
+                    for r in con.execute(f"SELECT thrid, body, subject FROM mail_messages WHERE thrid IN ({','.join('?' * len(ids))}) ORDER BY date DESC", ids):
+                        if words in re.sub(r"\s+", " ", ((r["subject"] or "") + " " + (r["body"] or "")).lower()):
+                            hit = r["thrid"]
+                            break
+                return self.send_json({"thrid": hit})
+            return self.send_json({"error": "not found"}, 404)
+        finally:
+            try:
+                con.close()
+            except Exception:
+                pass
+
+    def mail_post(self, path, b):
+        if path == "/api/mail/refresh":
+            try:
+                return self.send_json(dict(ok=True, **mail_refresh()))
+            except MailError as e:
+                return self.send_json({"ok": False, "error": str(e)})
+            except Exception as e:  # network trouble etc.
+                con = connect()
+                with LOCK, con:
+                    meta_set(con, "mail_last_error", f"Refresh failed: {e}")
+                con.close()
+                return self.send_json({"ok": False, "error": f"Refresh failed: {e}"})
+        if path == "/api/mail/test":
+            con = connect()
+            a = meta_get(con, "mail_address")
+            con.close()
+            try:
+                imap = imap_connect(a or "")
+                n = len(imap_list(imap))
+                imap.logout()
+                return self.send_json({"ok": True, "message": f"Connected. {n} labels and folders found."})
+            except MailError as e:
+                return self.send_json({"ok": False, "error": str(e)})
+            except Exception as e:
+                return self.send_json({"ok": False, "error": str(e)})
+        m = re.match(r"^/api/mail/thread/(\d+)$", path)
+        if m:
+            t, act = m.group(1), b.get("action")
+            con = connect()
+            with LOCK, con:
+                if not con.execute("SELECT 1 FROM mail_threads WHERE thrid=?", (t,)).fetchone():
+                    con.execute("INSERT INTO mail_threads (thrid) VALUES (?)", (t,))
+                if act == "seen":
+                    con.execute("UPDATE mail_threads SET seen_at=? WHERE thrid=?", (now(), t))
+                elif act == "handled":
+                    con.execute("UPDATE mail_threads SET handled_at=?, waiting_set_at=NULL, waiting_for=NULL, waiting_until=NULL, seen_at=? WHERE thrid=?", (now(), now(), t))
+                elif act == "reopen":
+                    con.execute("UPDATE mail_threads SET handled_at=NULL, waiting_set_at=NULL, waiting_for=NULL, waiting_until=NULL WHERE thrid=?", (t,))
+                elif act == "waiting":
+                    con.execute("UPDATE mail_threads SET waiting_for=?, waiting_until=?, waiting_set_at=?, handled_at=NULL WHERE thrid=?",
+                                (str(b.get("waitingFor") or "")[:300], str(b.get("waitingUntil") or "")[:10] or None, now(), t))
+                elif act == "todo":
+                    con.execute("UPDATE mail_threads SET todo_text=? WHERE thrid=?", (str(b.get("text") or "")[:500], t))
+                else:
+                    con.close()
+                    return self.send_json({"error": "unknown action"}, 400)
+            con.close()
+            return self.send_json({"ok": True})
+        return self.send_json({"error": "not found"}, 404)
+
+    def do_PUT(self):
+        path = urlparse(self.path).path
+        if not self.same_origin():
+            return self.send_json({"error": "forbidden"}, 403)
+        if path == "/api/mail/settings":
+            try:
+                b = self.body()
+            except ValueError:
+                return self.send_json({"error": "bad json"}, 400)
+            con = connect()
+            try:
+                old = meta_get(con, "mail_address") or ""
+                addr = str(b.get("address") or "").strip().lower()
+                if addr and not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", addr):
+                    return self.send_json({"ok": False, "error": "That does not look like an email address."})
+                pw = str(b.get("password") or "").strip()
+                if pw:
+                    if not kc_available():
+                        return self.send_json({"ok": False, "error": "The macOS Keychain is not available."})
+                    kc_set(addr, pw)
+                elif addr != old and old and kc_get(old) and addr:
+                    kc_set(addr, kc_get(old))
+                if b.get("forget") and addr:
+                    kc_delete(addr)
+                with LOCK, con:
+                    meta_set(con, "mail_address", addr)
+                    meta_set(con, "mail_aliases", str(b.get("aliases") or "").strip())
+                return self.send_json({"ok": True, "hasPassword": bool(addr and kc_get(addr))})
+            except (RuntimeError, OSError, subprocess.SubprocessError) as e:
+                return self.send_json({"ok": False, "error": str(e)})
+            finally:
+                con.close()
+        m = re.match(r"^/api/projects/([^/]+)$", path)
+        if m:
+            pid = m.group(1)
+            if len(pid) > 80:
+                return self.send_json({"error": "bad id"}, 400)
+            try:
+                p = self.body()
+            except ValueError:
+                return self.send_json({"error": "bad json"}, 400)
+            con = connect()
+            try:
+                with LOCK, con:
+                    save_project(con, pid, p)
+            except sqlite3.Error as e:
+                return self.send_json({"error": str(e)}, 500)
+            finally:
+                con.close()
+            return self.send_json({"ok": True, "id": pid})
+        m = re.match(r"^/api/versions/(\d+)$", path)
+        if m:
+            try:
+                b = self.body()
+            except ValueError:
+                return self.send_json({"error": "bad json"}, 400)
+            con = connect()
+            with LOCK, con:
+                vid = int(m.group(1))
+                if "data" in b:
+                    con.execute("UPDATE versions SET data=?, metrics=?, updated_at=? WHERE id=?", (json.dumps(b.get("data") or {}), json.dumps(b.get("metrics")), now(), vid))
+                if b.get("label"):
+                    con.execute("UPDATE versions SET label=? WHERE id=?", (str(b["label"]).strip()[:120], vid))
+            con.close()
+            return self.send_json({"ok": True})
+        self.send_json({"error": "not found"}, 404)
+
+    def do_DELETE(self):
+        path = urlparse(self.path).path
+        if not self.same_origin():
+            return self.send_json({"error": "forbidden"}, 403)
+        m = re.match(r"^/api/projects/([^/]+)$", path)
+        if m:
+            pid = m.group(1)
+            con = connect()
+            with LOCK, con:
+                row = con.execute("SELECT name FROM projects WHERE id=?", (pid,)).fetchone()
+                con.execute("DELETE FROM projects WHERE id=?", (pid,))
+                con.execute("INSERT INTO activity (project_id, project_name, action, at) VALUES (?, ?, 'deleted', ?)",
+                            (pid, row["name"] if row else None, now()))
+            con.close()
+            # documents stay on disk (moved aside) so nothing is lost by accident
+            d = os.path.join(DOC_DIR, pid)
+            if os.path.isdir(d):
+                os.makedirs(os.path.join(DOC_DIR, "_deleted"), exist_ok=True)
+                os.replace(d, os.path.join(DOC_DIR, "_deleted", f"{pid}_{dt.datetime.now():%Y%m%d%H%M%S}"))
+            return self.send_json({"ok": True})
+        m = re.match(r"^/api/versions/(\d+)$", path)
+        if m:
+            con = connect()
+            with LOCK, con:
+                con.execute("DELETE FROM versions WHERE id=?", (int(m.group(1)),))
+            con.close()
+            return self.send_json({"ok": True})
+        self.send_json({"error": "not found"}, 404)
+
+    def do_POST(self):
+        url = urlparse(self.path)
+        path = url.path
+        if not self.same_origin():
+            return self.send_json({"error": "forbidden"}, 403)
+        if path.startswith("/api/mail/"):
+            try:
+                b = self.body()
+            except ValueError:
+                b = {}
+            return self.mail_post(path, b)
+        if path == "/api/backup":
+            with LOCK:
+                dest = backup("manual")
+            return self.send_json({"ok": True, "file": os.path.relpath(dest, DATA)})
+        m = re.match(r"^/api/projects/([^/]+)/versions$", path)
+        if m:
+            try:
+                b = self.body()
+            except ValueError:
+                return self.send_json({"error": "bad json"}, 400)
+            con = connect()
+            with LOCK, con:
+                if not con.execute("SELECT 1 FROM projects WHERE id=?", (m.group(1),)).fetchone():
+                    con.close()
+                    return self.send_json({"error": "save the project first"}, 409)
+                cur = con.execute("INSERT INTO versions (project_id, label, created_at, data, metrics, parent_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                                  (m.group(1), (b.get("label") or "Version").strip()[:120], now(), json.dumps(b.get("data") or {}),
+                                   json.dumps(b.get("metrics")), b.get("parentId"), now()))
+                vid = cur.lastrowid
+            con.close()
+            return self.send_json({"ok": True, "id": vid})
+        self.send_json({"error": "not found"}, 404)
+
+
+def main():
+    ap = argparse.ArgumentParser(description="InRento Deal Desk")
+    ap.add_argument("--port", type=int, default=8765)
+    ap.add_argument("--no-browser", action="store_true")
+    ap.add_argument("--import", dest="imp", metavar="JSON")
+    ap.add_argument("--idle-exit", type=float, default=0, metavar="MIN", help="stop after MIN minutes with no open app window")
+    a = ap.parse_args()
+    init_db()
+    if a.imp:
+        print(f"Imported {import_json(a.imp)} project(s) into {DB_PATH}")
+        return
+    daily_backup()
+    auto_import()
+    url = f"http://127.0.0.1:{a.port}/"
+    try:
+        srv = ThreadingHTTPServer(("127.0.0.1", a.port), Handler)
+    except OSError:
+        print(f"Port {a.port} is busy – Deal Desk is probably already running. Opening {url}")
+        if not a.no_browser:
+            webbrowser.open(url)
+        return
+    print(f"Deal Desk is running at {url}\nDatabase: {DB_PATH}\nClose this window (or press Ctrl+C) to stop.")
+    if not a.no_browser:
+        threading.Timer(0.6, lambda: webbrowser.open(url)).start()
+    if a.idle_exit > 0:
+        import time
+        LAST_SEEN[0] = time.time()
+
+        def watchdog():
+            while True:
+                time.sleep(30)
+                if time.time() - LAST_SEEN[0] > a.idle_exit * 60:
+                    print(f"No app window for {a.idle_exit:g} minutes – stopping.", flush=True)
+                    srv.shutdown()
+                    return
+        threading.Thread(target=watchdog, daemon=True).start()
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        print("\nStopped.")
+
+
+if __name__ == "__main__":
+    main()

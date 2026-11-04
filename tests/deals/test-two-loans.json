@@ -1,0 +1,184 @@
+{
+ "name": "Test two loans, Riga",
+ "inputs": {
+  "currency": "EUR",
+  "drawdown": "2026-11-01",
+  "horizon": "24",
+  "loan": "0",
+  "tranchesOn": true,
+  "trancheMode": "dates",
+  "rate": "12",
+  "term": "18",
+  "repayType": "Bullet",
+  "arrFee": "8",
+  "feeBasis": "tranche",
+  "feeTreatment": "withheld",
+  "reserveMonths": "3",
+  "fixedGain": "1.5",
+  "sweepDefault": "85",
+  "saleRepay": "sweep",
+  "sweepBasis": "Gross sale price",
+  "sweepApplies": "All asset sales",
+  "intTiming": "monthly",
+  "saleOrder": "interestFirst",
+  "payMonths": [
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true
+  ],
+  "refinanced": "4362000",
+  "equityAuto": false,
+  "equity": "0",
+  "haircut": "30",
+  "sellCost": "3",
+  "maxLTV": "70",
+  "grace": "0",
+  "capitalise": "No",
+  "loansOn": true
+ },
+ "tranches": [
+  {
+   "label": "Tranche 1",
+   "loan": "1",
+   "date": "2026-11-01",
+   "amount": "5000000",
+   "trigger": "date"
+  },
+  {
+   "label": "Tranche 2",
+   "loan": "2",
+   "date": "",
+   "amount": "500000",
+   "trigger": "balance",
+   "trigAmount": "2700000"
+  },
+  {
+   "label": "Tranche 3",
+   "loan": "2",
+   "date": "",
+   "amount": "500000",
+   "trigger": "balance",
+   "trigAmount": "1100000"
+  }
+ ],
+ "assets": [
+  {
+   "name": "Penthouse",
+   "inColl": true,
+   "market": "2727000",
+   "area": "183.85",
+   "saleDate": "2027-01-15",
+   "salePrice": "2727000",
+   "sweep": "",
+   "secures": "1"
+  },
+  {
+   "name": "Apartment 1",
+   "inColl": true,
+   "market": "775000",
+   "area": "68.75",
+   "saleDate": "2027-02-15",
+   "salePrice": "625000",
+   "sweep": "",
+   "secures": "1"
+  },
+  {
+   "name": "Apartment 2",
+   "inColl": true,
+   "market": "907000",
+   "area": "99.23",
+   "saleDate": "2027-03-15",
+   "salePrice": "907000",
+   "sweep": "",
+   "secures": "1"
+  },
+  {
+   "name": "Apartment 3",
+   "inColl": true,
+   "market": "1302000",
+   "area": "115.56",
+   "saleDate": "2027-04-15",
+   "salePrice": "974000",
+   "sweep": "",
+   "secures": "1"
+  },
+  {
+   "name": "Apartment 4",
+   "inColl": true,
+   "market": "996000",
+   "area": "104.33",
+   "saleDate": "2027-05-15",
+   "salePrice": "996000",
+   "sweep": "",
+   "secures": "1"
+  },
+  {
+   "name": "Apartment 5",
+   "inColl": true,
+   "market": "1181000",
+   "area": "115.43",
+   "saleDate": "2027-06-15",
+   "salePrice": "1181000",
+   "sweep": "",
+   "secures": "1"
+  },
+  {
+   "name": "Apartment 6",
+   "inColl": true,
+   "market": "1063000",
+   "area": "104.63",
+   "saleDate": "2027-07-15",
+   "salePrice": "1063000",
+   "sweep": "",
+   "secures": "1"
+  },
+  {
+   "name": "Old tenement",
+   "inColl": true,
+   "market": "2160000",
+   "haircut": "50",
+   "saleDate": "",
+   "salePrice": "",
+   "sweep": "",
+   "secures": "2"
+  }
+ ],
+ "adjustments": [
+  {
+   "desc": "Hotel works",
+   "type": "Capex",
+   "date": "2027-02-01",
+   "end": "2027-06-30",
+   "recurrence": "Monthly",
+   "amount": "264000"
+  }
+ ],
+ "loans": [
+  {
+   "name": "Loan 1 – apartments",
+   "fee": "8",
+   "rate": "",
+   "gain": "",
+   "reserveMonths": "3",
+   "term": ""
+  },
+  {
+   "name": "Loan 2 – tenement",
+   "fee": "7",
+   "rate": "",
+   "gain": "",
+   "reserveMonths": "0",
+   "term": ""
+  }
+ ],
+ "notes": "Fictional deal for the release guard: two loans repaid from the same apartment sales (Loan 1 first), Loan 2 tranches released when the balance falls below an amount."
+}

@@ -1,0 +1,383 @@
+{
+ "name": "N7, Vilnius",
+ "status": "New deal",
+ "borrower": "UAB Enart",
+ "country": "LT",
+ "projectType": "Kindergarten + residential building under construction, Bendoriai (Vilnius district)",
+ "contact": "Mantas Bieliauskas (director)",
+ "notes": "N7, Vilnius – kindergarten + residential building under construction at Bendorėlių 1-oji al. 4, Bendoriai (Avižieniai eldership, Vilnius district). Borrower UAB Enart (306352723), established 07.07.2023, director Mantas Bieliauskas. General contractor UAB Anselta (304915322). Building permit and technical design in place.\n\nPreliminary terms (Tautvydas, 23 Oct 2026): loan EUR 2.5m, 11%, InRento fee 8%, one tranche. Term, drawdown date, purpose of funds and repayment structure not set yet.\n\nAppraisal (UAB Jungtinis verslas, AB26/0430/07N, valuation date 30.04.2026, report 11.05.2026): market value as-is EUR 3,150,000 excl. VAT (residual method; building ~50% complete). Split: land plot share 4400-5247-5553 EUR 469,000; corridor plot share 4400-5246-6554 EUR 4,200; building 4400-6685-1847 EUR 2,676,800. Appraiser's gross development value EUR 6,475,000 incl. VAT (apartments 1,495.94 m² at EUR 2,647/m², kindergarten 1,428.32 m² at EUR 1,599/m², 30 parking spaces at EUR 7,700).\n\nBusiness plan (Aug/Oct 2026): project cost EUR 4,504,418 incl. VAT (EUR 3,722,660 excl.); construction budget EUR 3,847,618 incl. VAT, of which EUR 1,322,225 done and EUR 2,525,393 remaining. Plan: sell 1,350 m² of apartments at EUR 2,800/m² incl. VAT and 30 parking spaces at EUR 6,500 (EUR 3,975,000 incl. VAT / EUR 3,285,124 excl.); keep 1,527 m² (1,427 m² public-use + 100 m² residential) for long-term rent at EUR 18.00/m²/month excl. VAT (EUR 329,832 a year, +3% p.a.). Stages: II Jan–Aug 2026 (facades, roofs), III Aug 2026–Apr 2027 (interior, finishing, engineering). BP states EUR 2.3m already invested as related-company loans; BP was written for a bank loan of EUR 1.5–2.0m.\n\nBalance sheet 31.07.2026 (preliminary, unapproved): total assets EUR 1.86m (land 780k, WIP 955k, cash 35k); equity −EUR 187k; long-term borrowings EUR 500k + other long-term payables EUR 1.30m; trade payables EUR 211k.",
+ "createdAt": "2026-10-23T10:31:05+00:00",
+ "updatedAt": "2026-10-23T10:31:40.430Z",
+ "nextAction": "Waiting for a response",
+ "nextOwner": "borrower",
+ "nextDue": "",
+ "grid": {
+  "rowDriver": "rev",
+  "colDriver": "rate",
+  "rowVals": [
+   "-30",
+   "-20",
+   "-10",
+   "0",
+   "10"
+  ],
+  "colVals": [
+   "0",
+   "1",
+   "2",
+   "3",
+   "4"
+  ]
+ },
+ "inputs": {
+  "currency": "EUR",
+  "drawdown": "2026-11-01",
+  "horizon": "24",
+  "openingCash": "0",
+  "opModel": "simple",
+  "revenueSource": "manual",
+  "revenue": "0",
+  "revGrowth": "0",
+  "opex": "0",
+  "opexGrowth": "0",
+  "cfStart": "",
+  "tax": "0",
+  "otherDebt": "0",
+  "otherDebtEnd": "",
+  "vat": "0",
+  "commission": "0",
+  "cardFee": "0",
+  "ancillary": "0",
+  "loan": "2500000",
+  "tranchesOn": false,
+  "rate": "11",
+  "term": "24",
+  "repayType": "Bullet",
+  "grace": "0",
+  "capitalise": "No",
+  "payMonths": [
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true
+  ],
+  "extOn": false,
+  "extMonths": "6",
+  "extFee": "1",
+  "extRate": "",
+  "defaultRate": "",
+  "sweepDefault": "100",
+  "sweepBasis": "Gross sale price",
+  "sweepApplies": "All asset sales",
+  "saleRepay": "sweep",
+  "releasePct": "115",
+  "opSweepPct": "0",
+  "opSweepMin": "0",
+  "opSweepMonths": [
+   false,
+   false,
+   false,
+   false,
+   false,
+   false,
+   false,
+   false,
+   false,
+   false,
+   false,
+   false
+  ],
+  "arrFee": "8",
+  "feeBasis": "facility",
+  "feeTreatment": "withheld",
+  "commitFee": "0",
+  "reserveMonths": "0",
+  "prepayFee": "0",
+  "exitFee": "0",
+  "fixedGain": "0",
+  "profitShare": "0",
+  "deduction": "3",
+  "acctFee": "0",
+  "refinanced": "0",
+  "purchaseSource": "manual",
+  "purchase": "0",
+  "closingCosts": "0",
+  "otherUses": "0",
+  "equityAuto": true,
+  "equity": "",
+  "projectCost": "",
+  "haircut": "30",
+  "sellCost": "3",
+  "maxLTV": "70",
+  "minDSCR": "1.2",
+  "targetCover": "",
+  "dscrBasis": "rolling12",
+  "exitCap": "",
+  "refiLTV": "",
+  "seasonality": [
+   "1",
+   "1",
+   "1",
+   "1",
+   "1",
+   "1",
+   "1",
+   "1",
+   "1",
+   "1",
+   "1",
+   "1"
+  ],
+  "dealType": "custom",
+  "showAll": false,
+  "intTiming": "monthly",
+  "saleOrder": "principalFirst",
+  "ignoredChecks": [],
+  "fxRate": "",
+  "fxDate": "",
+  "sources": {
+   "inputs.loan": {
+    "doc": "",
+    "loc": "",
+    "note": "Preliminary terms from Tautvydas, 23 Oct 2026"
+   },
+   "inputs.rate": {
+    "doc": "",
+    "loc": "",
+    "note": "Preliminary terms from Tautvydas, 23 Oct 2026"
+   },
+   "inputs.arrFee": {
+    "doc": "",
+    "loc": "",
+    "note": "Preliminary terms from Tautvydas, 23 Oct 2026"
+   },
+   "inputs.term": {
+    "doc": "",
+    "loc": "",
+    "note": "App default 24 months – term not given",
+    "assumed": true
+   },
+   "inputs.drawdown": {
+    "doc": "",
+    "loc": "",
+    "note": "App default (next month) – drawdown date not given",
+    "assumed": true
+   },
+   "assets.0.market": {
+    "doc": "Appraisal",
+    "loc": "469 000",
+    "note": "Land plot share"
+   },
+   "assets.1.market": {
+    "doc": "Appraisal",
+    "loc": "4200",
+    "note": "Corridor plot share"
+   },
+   "assets.2.market": {
+    "doc": "Appraisal",
+    "loc": "2 676 800",
+    "note": "Building, as-is"
+   }
+  },
+  "gmailLabel": "New deals/N7, Vilnius"
+ },
+ "assets": [
+  {
+   "name": "Land plot share 2741/6320 (4400-5247-5553), 54.82 a",
+   "inColl": true,
+   "market": "469000",
+   "valDate": "2026-04-30",
+   "source": "UAB Jungtinis verslas",
+   "notes": "Appraisal AB26/0430/07N, component of EUR 3.15m as-is value"
+  },
+  {
+   "name": "Corridor plot share 1341/2660 (4400-5246-6554), 13.41 a",
+   "inColl": true,
+   "market": "4200",
+   "valDate": "2026-04-30",
+   "source": "UAB Jungtinis verslas",
+   "notes": "Appraisal AB26/0430/07N"
+  },
+  {
+   "name": "Building under construction 7C2/b (4400-6685-1847), ~50% complete",
+   "inColl": true,
+   "market": "2676800",
+   "valDate": "2026-04-30",
+   "source": "UAB Jungtinis verslas",
+   "notes": "Appraisal AB26/0430/07N, residual method; 2,924.46 m² total (1,495.94 m² residential, 1,428.32 m² kindergarten)"
+  }
+ ],
+ "adjustments": [],
+ "scenarios": [
+  {
+   "name": "Base",
+   "rev": "0",
+   "opex": "0",
+   "rentDelay": "0",
+   "rate": "0",
+   "salePrice": "0",
+   "saleDelay": "0",
+   "value": "0",
+   "capex": "0",
+   "exitDelay": "0"
+  },
+  {
+   "name": "Revenue -10%",
+   "rev": "-10",
+   "opex": "0",
+   "rentDelay": "0",
+   "rate": "0",
+   "salePrice": "0",
+   "saleDelay": "0",
+   "value": "0",
+   "capex": "0",
+   "exitDelay": "0"
+  },
+  {
+   "name": "Revenue -20%, opex +10%",
+   "rev": "-20",
+   "opex": "10",
+   "rentDelay": "0",
+   "rate": "0",
+   "salePrice": "0",
+   "saleDelay": "0",
+   "value": "0",
+   "capex": "0",
+   "exitDelay": "0"
+  },
+  {
+   "name": "Rate +2 pp",
+   "rev": "0",
+   "opex": "0",
+   "rentDelay": "0",
+   "rate": "2",
+   "salePrice": "0",
+   "saleDelay": "0",
+   "value": "0",
+   "capex": "0",
+   "exitDelay": "0"
+  },
+  {
+   "name": "Start 3 m late, capex +20%",
+   "rev": "0",
+   "opex": "0",
+   "rentDelay": "3",
+   "rate": "0",
+   "salePrice": "0",
+   "saleDelay": "0",
+   "value": "0",
+   "capex": "20",
+   "exitDelay": "0"
+  },
+  {
+   "name": "Sales -15%, 6 m late",
+   "rev": "0",
+   "opex": "0",
+   "rentDelay": "0",
+   "rate": "0",
+   "salePrice": "-15",
+   "saleDelay": "6",
+   "value": "0",
+   "capex": "0",
+   "exitDelay": "0"
+  },
+  {
+   "name": "Value -20%",
+   "rev": "0",
+   "opex": "0",
+   "rentDelay": "0",
+   "rate": "0",
+   "salePrice": "0",
+   "saleDelay": "0",
+   "value": "-20",
+   "capex": "0",
+   "exitDelay": "0"
+  },
+  {
+   "name": "Repaid 6 m late",
+   "rev": "0",
+   "opex": "0",
+   "rentDelay": "0",
+   "rate": "0",
+   "salePrice": "0",
+   "saleDelay": "0",
+   "value": "0",
+   "capex": "0",
+   "exitDelay": "6"
+  },
+  {
+   "name": "Severe combined",
+   "rev": "-20",
+   "opex": "15",
+   "rentDelay": "3",
+   "rate": "2",
+   "salePrice": "-20",
+   "saleDelay": "6",
+   "value": "-25",
+   "capex": "25",
+   "exitDelay": "6"
+  }
+ ],
+ "todos": [
+  {
+   "text": "Purpose of the EUR 2.5m and use of funds (remaining works EUR 2.53m incl. VAT per business plan; refinancing of related-company loans?)",
+   "done": false,
+   "category": "Open item",
+   "due": ""
+  },
+  {
+   "text": "Loan term, drawdown date and repayment structure (sweep from sales, interest timing)",
+   "done": false,
+   "category": "Open item",
+   "due": ""
+  },
+  {
+   "text": "Related-company loans: business plan says EUR 2.3m, balance sheet 31.07.2026 shows EUR 1.80m (EUR 0.50m borrowings + EUR 1.30m other long-term payables) – lenders, agreements, subordination",
+   "done": false,
+   "category": "Document request",
+   "due": ""
+  },
+  {
+   "text": "P&L for 2025 and Jan–Jul 2026 (losses EUR 103k and EUR 114k; equity −EUR 187k)",
+   "done": false,
+   "category": "Document request",
+   "due": ""
+  },
+  {
+   "text": "Construction progress: appraisal ~50% (Apr 2026), business plan ~55% (Sep 2026), balance-sheet WIP EUR 955k ≈ 30% of budget – contractor acts / technical supervisor confirmation",
+   "done": false,
+   "category": "Document request",
+   "due": ""
+  },
+  {
+   "text": "Sales plan: timing and pace, VAT treatment, reservations or pre-sales (advances received EUR 22.5k)",
+   "done": false,
+   "category": "Open item",
+   "due": ""
+  },
+  {
+   "text": "Rental part 1,527 m² (kindergarten 1,427 m²): tenant, lease agreement or letter of intent",
+   "done": false,
+   "category": "Document request",
+   "due": ""
+  },
+  {
+   "text": "30 a plot Senasis Ukmergės kel. 88A (4400-0195-4223, EUR 287k per business plan) – available as additional security?",
+   "done": false,
+   "category": "Open item",
+   "due": ""
+  }
+ ],
+ "tranches": [],
+ "debts": [],
+ "revLines": [],
+ "costLines": []
+}

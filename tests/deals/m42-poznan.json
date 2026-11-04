@@ -1,0 +1,318 @@
+{
+ "name": "M42, Poznan",
+ "status": "Turned in",
+ "borrower": "Landus Sp. z o.o.",
+ "country": "PL",
+ "projectType": "Office & residential building, Sołacz",
+ "contact": "",
+ "notes": "Property: office and residential building, ul. Mazowiecka 42, Poznań (Sołacz, listed monument area A 244). Plots 47/3 and 48/3, 1,162 m², LR PO2P/00226187/8. Usable area 689.74 m² (incl. 61.94 m² flat on the top floor), 3 storeys + attic, 10 parking spaces, occupancy permit 26.06.2017. Owner: Landus Sp. z o.o. (KRS 0001153062).\nValuation: Piotr Kuchciński (licence 4034), report 17.09.2026, value as at 07.09.2026, comparative approach (average price adjustment). Market value PLN 15,022,000 (21,779.82 PLN/m²); valuer's forced-sale value PLN 12,768,700 (85%).\nLR section IV (per valuation): LWBS Drezdenko mortgages PLN 2,250,000 (working capital loan 202/36/2023/13, 26.05.2023), PLN 5,010,000 (investment loan 200/n/2023/13, 26.05.2023), PLN 3,915,000 (working capital loan 498/12/2024/13, 25.11.2024); BIOTIM Sp. z o.o. mortgage PLN 5,200,000 securing a loan to Compremum S.A. (loan and surety agreement 08.11.2024). Section III: ENEA transmission easement.\nLandus financials: revenue 2025 PLN 1,712,438; H1 2026 PLN 904,750. Net profit 2025 PLN 1,848,687 (incl. PLN 1,756,000 revaluation gain); H1 2026 PLN 172,007. Credits and loans: 31.12.2025 PLN 5,482,441; 30.06.2026 PLN 3,960,691. Loans granted (long-term) 30.06.2026 PLN 12,351,131; other short-term liabilities PLN 12,359,758. Cash 30.06.2026 PLN 1,276,501.\nRent roll 01.10.2026: PLN 160,915.54 net per month (PLN 1,930,986 a year), 15 lines; rent actually received in H1 2026 PLN 710,014 = 73.5% of the statement. Leases provided cover PLN 65,050 (40%) of statement rent. Most tenants are related to the borrower's shareholders (see Rent summary, sheet 'Renter background check').",
+ "createdAt": "2026-10-22T07:14:06+00:00",
+ "updatedAt": "2026-10-23T06:46:34.855Z",
+ "nextAction": "Term sheet signed",
+ "nextOwner": "",
+ "nextDue": "",
+ "grid": {
+  "rowDriver": "rev",
+  "colDriver": "rate",
+  "rowVals": [
+   "-30",
+   "-20",
+   "-10",
+   "0",
+   "10"
+  ],
+  "colVals": [
+   "0",
+   "1",
+   "2",
+   "3",
+   "4"
+  ]
+ },
+ "inputs": {
+  "currency": "PLN",
+  "drawdown": "2026-11-01",
+  "horizon": "30",
+  "openingCash": "0",
+  "opModel": "simple",
+  "revenueSource": "manual",
+  "revenue": "118335",
+  "revGrowth": "0",
+  "opex": "2000",
+  "opexGrowth": "0",
+  "cfStart": "",
+  "tax": "0",
+  "otherDebt": "0",
+  "otherDebtEnd": "",
+  "vat": "0",
+  "commission": "0",
+  "cardFee": "0",
+  "ancillary": "0",
+  "loan": "0",
+  "tranchesOn": true,
+  "rate": "11",
+  "term": "24",
+  "repayType": "Bullet",
+  "grace": "0",
+  "capitalise": "No",
+  "payMonths": [
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true
+  ],
+  "extOn": false,
+  "extMonths": "6",
+  "extFee": "1",
+  "extRate": "",
+  "defaultRate": "15",
+  "sweepDefault": "100",
+  "sweepBasis": "Gross sale price",
+  "sweepApplies": "All asset sales",
+  "saleRepay": "sweep",
+  "releasePct": "115",
+  "opSweepPct": "0",
+  "opSweepMin": "0",
+  "opSweepMonths": [
+   false,
+   false,
+   false,
+   false,
+   false,
+   false,
+   false,
+   false,
+   false,
+   false,
+   false,
+   false
+  ],
+  "arrFee": "8",
+  "feeBasis": "tranche",
+  "feeTreatment": "withheld",
+  "commitFee": "0",
+  "reserveMonths": "0",
+  "prepayFee": "0",
+  "exitFee": "0",
+  "fixedGain": "0",
+  "profitShare": "0",
+  "deduction": "3",
+  "acctFee": "0",
+  "refinanced": "0",
+  "purchaseSource": "manual",
+  "purchase": "0",
+  "closingCosts": "0",
+  "otherUses": "0",
+  "equityAuto": true,
+  "equity": "",
+  "projectCost": "",
+  "haircut": "30",
+  "sellCost": "3",
+  "maxLTV": "70",
+  "minDSCR": "0.5",
+  "targetCover": "",
+  "dscrBasis": "rolling12",
+  "exitCap": "",
+  "refiLTV": "",
+  "seasonality": [
+   "1",
+   "1",
+   "1",
+   "1",
+   "1",
+   "1",
+   "1",
+   "1",
+   "1",
+   "1",
+   "1",
+   "1"
+  ],
+  "dealType": "rental",
+  "showAll": false,
+  "intTiming": "monthly",
+  "saleOrder": "principalFirst",
+  "ignoredChecks": [],
+  "fxRate": "4.3635",
+  "fxDate": "2026-10-21",
+  "sources": {
+   "assets.0.market": {
+    "doc": "Valuation_report_Poznan_Mazowiecka",
+    "loc": "15 022 000",
+    "note": "Market value (WR), section 9.1"
+   },
+   "assets.0.valDate": {
+    "doc": "Valuation_report_Poznan_Mazowiecka",
+    "loc": "7 September 2026",
+    "note": "Value date; report dated 17.09.2026"
+   },
+   "assets.0.area": {
+    "doc": "Valuation_report_Poznan_Mazowiecka",
+    "loc": "689,74",
+    "note": "Usable floor area"
+   },
+   "assets.0.rent": {
+    "doc": "Rent_summary",
+    "loc": "PODSUMOWANIE",
+    "note": "Total (PODSUMOWANIE) net monthly rent per statement at 01.10.2026; H1 2026 collections were 73.5% of it",
+    "edited": true
+   }
+  }
+ },
+ "assets": [
+  {
+   "name": "Mazowiecka 42, Poznań – office & residential building (LR PO2P/00226187/8)",
+   "inColl": true,
+   "market": "15022000",
+   "valDate": "2026-09-07",
+   "source": "Piotr Kuchciński, comparative approach",
+   "rent": "",
+   "area": "689.74",
+   "saleDate": "2028-05-23",
+   "salePrice": "15000000",
+   "notes": "Valuer's forced-sale value 12,768,700 (85%). Plots 47/3, 48/3 – 1,162 m². Monument area A 244."
+  },
+  {
+   "name": "Poznań, Młyn Hermanka",
+   "inColl": true,
+   "market": "7203000",
+   "valDate": "",
+   "source": "",
+   "haircut": "",
+   "alloc": "",
+   "acqPrice": "",
+   "rent": "",
+   "area": "",
+   "saleDate": "",
+   "salePrice": "",
+   "sweep": "",
+   "minPrice": "",
+   "notary": "",
+   "notes": "",
+   "status": "",
+   "listPrice": "",
+   "deposit": "",
+   "depositHeld": ""
+  }
+ ],
+ "adjustments": [
+  {
+   "desc": "Renovation works",
+   "type": "Capex",
+   "date": "",
+   "recurrence": "One-off",
+   "end": "",
+   "amount": "",
+   "notes": ""
+  }
+ ],
+ "scenarios": [
+  {
+   "name": "Base",
+   "rev": "0",
+   "opex": "0",
+   "rentDelay": "0",
+   "rate": "0",
+   "salePrice": "0",
+   "saleDelay": "0",
+   "value": "0",
+   "capex": "0",
+   "exitDelay": "0"
+  },
+  {
+   "name": "Worst case",
+   "rev": "0",
+   "opex": "0",
+   "rentDelay": "0",
+   "rate": "0",
+   "salePrice": "-10",
+   "saleDelay": "3",
+   "value": "0",
+   "capex": "0",
+   "exitDelay": "0"
+  }
+ ],
+ "todos": [
+  {
+   "text": "Loan amount, rate, term, drawdown date and purpose",
+   "done": false,
+   "category": "Open item",
+   "due": ""
+  },
+  {
+   "text": "Outstanding balances on the LWBS loans and the Compremum/BIOTIM loan; which are repaid from our loan",
+   "done": false,
+   "category": "Document request",
+   "due": ""
+  },
+  {
+   "text": "Deletion of all 4 mortgages (LWBS ×3, BIOTIM) at drawdown – first rank for InRento",
+   "done": false,
+   "category": "Condition precedent",
+   "due": ""
+  },
+  {
+   "text": "Lease agreements for tenants without a lease (60% of statement rent, incl. Compremum S.A. PLN 67.8k/month)",
+   "done": false,
+   "category": "Document request",
+   "due": ""
+  },
+  {
+   "text": "Explain rent collection: H1 2026 received PLN 710k vs PLN 965k per statement (73.5%)",
+   "done": false,
+   "category": "Open item",
+   "due": ""
+  }
+ ],
+ "tranches": [
+  {
+   "date": "2026-11-01",
+   "amount": "12648147",
+   "label": ""
+  },
+  {
+   "date": "",
+   "amount": "436143",
+   "label": ""
+  },
+  {
+   "date": "",
+   "amount": "523371",
+   "label": ""
+  }
+ ],
+ "debts": [
+  {
+   "lender": "Dresdenko",
+   "balance": "6000000",
+   "rate": "",
+   "maturity": "",
+   "prepay": "",
+   "refinanced": true,
+   "service": "",
+   "end": "",
+   "notes": ""
+  },
+  {
+   "lender": "BIOTIM",
+   "balance": "1500000",
+   "rate": "",
+   "maturity": "",
+   "prepay": "",
+   "refinanced": true,
+   "service": "",
+   "end": "",
+   "notes": ""
+  }
+ ],
+ "revLines": [],
+ "costLines": []
+}

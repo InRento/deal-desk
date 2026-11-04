@@ -1,0 +1,46 @@
+#!/bin/bash
+# InRento Deal Desk launcher.
+# Program files live inside this app; data (database, documents, backups) in ~/Deal Desk.
+# Files are opened by this script itself (shell redirects), so macOS folder protection does not block child tools.
+RES="$(cd "$(dirname "$0")/../Resources" && pwd)"
+DATA="$HOME/Deal Desk"
+URL="http://127.0.0.1:8765/"
+mkdir -p "$DATA/app" "$DATA/runtime" || exit 1
+LOG="$DATA/deal-desk.log"
+alert() { /usr/bin/osascript -e "display alert \"Deal Desk\" message \"$1\"" >/dev/null 2>&1; }
+ping() { /usr/bin/curl -s -m 1 "${URL}api/ping" | /usr/bin/grep -q deal-desk; }
+fail() { echo "$(date) ERROR: $1" >> "$LOG"; alert "$1 Details are in deal-desk.log in the Deal Desk folder in your home folder."; exit 1; }
+
+WANT="$(/usr/bin/grep -m1 '^APP_VERSION' "$RES/server.py" | /usr/bin/cut -d'"' -f2)"
+if /usr/bin/curl -s -m 1 "${URL}api/ping" | /usr/bin/grep -q "\"version\": \"$WANT\""; then /usr/bin/open "$URL"; exit 0; fi
+# an older Deal Desk server still running: stop it so the new version starts
+for pid in $(/usr/sbin/lsof -ti tcp:8765 -sTCP:LISTEN 2>/dev/null); do
+  if /bin/ps -o command= -p "$pid" | /usr/bin/grep -q "server.py"; then echo "$(date) stopping older server $pid" >> "$LOG"; kill "$pid"; sleep 1; fi
+done
+echo "$(date) launching from $RES" >> "$LOG"
+
+# 1. program files (refreshed on every launch so app updates take effect)
+for f in server.py index.html xlsx.full.min.js jspdf.umd.min.js html2canvas.min.js; do
+  /bin/cat < "$RES/$f" > "$DATA/app/$f" 2>> "$LOG" || fail "Could not copy $f."
+done
+# 2. database: first launch starts from the copy shipped with the app (empty in packages made by package.sh)
+if [ ! -f "$DATA/deals.sqlite" ]; then /bin/cat < "$RES/seed.sqlite" > "$DATA/deals.sqlite" 2>> "$LOG" || fail "Could not create the database."; fi
+# 2b. one-time imports shipped with the app (the server imports each file once)
+if [ -d "$RES/import" ]; then
+  mkdir -p "$DATA/import"
+  for f in "$RES"/import/*.json; do [ -f "$f" ] && /bin/cat < "$f" > "$DATA/import/$(basename "$f")" 2>> "$LOG"; done
+fi
+# 3. bundled Python (unpacked once)
+PY="$DATA/runtime/python/bin/python3"
+if [ ! -x "$PY" ]; then
+  echo "$(date) unpacking bundled Python" >> "$LOG"
+  /usr/bin/tar -xzf - -C "$DATA/runtime" < "$RES/python-runtime.tar.gz" >> "$LOG" 2>&1 || fail "Could not unpack the built-in Python."
+  /usr/bin/xattr -dr com.apple.quarantine "$DATA/runtime/python" >/dev/null 2>&1
+fi
+"$PY" -c "import sqlite3, http.server" >> "$LOG" 2>&1 || fail "The built-in Python does not run on this Mac."
+# 4. start the server in the background; it stops 20 minutes after the last Deal Desk window closes
+cd "$DATA" || exit 1
+echo "$(date) starting server" >> "$LOG"
+DEALDESK_DATA="$DATA" nohup "$PY" "$DATA/app/server.py" --no-browser --idle-exit 20 >> "$LOG" 2>&1 &
+for i in $(seq 1 80); do ping && break; sleep 0.25; done
+ping && /usr/bin/open "$URL" || fail "Deal Desk did not start."

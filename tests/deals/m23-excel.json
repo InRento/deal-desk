@@ -1,0 +1,260 @@
+{
+ "name": "M23, Vilnius",
+ "status": "Underwriting",
+ "borrower": "",
+ "country": "LT",
+ "projectType": "Rental property",
+ "contact": "",
+ "notes": "Three apartments with parking at M23, Vilnius. Bullet loan, rent-funded interest, exit by refinancing or sale (not modelled). Imported from M23_calculation_with_sensitivity.xlsx.",
+ "todos": [
+  {
+   "text": "Confirm exit route for the €321k balloon (sale or refinancing)",
+   "done": false
+  },
+  {
+   "text": "Borrower to fund €16,050 arrangement-fee gap at drawdown",
+   "done": false
+  }
+ ],
+ "inputs": {
+  "currency": "EUR",
+  "drawdown": "2026-11-01",
+  "horizon": "30",
+  "openingCash": "12000",
+  "revenueSource": "assets",
+  "revenue": "",
+  "revGrowth": "0",
+  "opex": "0",
+  "opexGrowth": "0",
+  "cfStart": "",
+  "tax": "0",
+  "otherDebt": "963.49+1290.95",
+  "otherDebtEnd": "2026-09-28",
+  "loan": "321000",
+  "rate": "8.5",
+  "term": "36",
+  "repayType": "Bullet",
+  "grace": "0",
+  "capitalise": "No",
+  "sweepDefault": "100",
+  "sweepBasis": "Gross sale price",
+  "sweepApplies": "All asset sales",
+  "arrFee": "5",
+  "reserveMonths": "0",
+  "prepayFee": "0",
+  "exitFee": "0",
+  "fixedGain": "1.5",
+  "profitShare": "0",
+  "deduction": "0",
+  "acctFee": "0",
+  "refinanced": "0",
+  "purchaseSource": "assets",
+  "purchase": "",
+  "closingCosts": "0",
+  "equityAuto": true,
+  "equity": "",
+  "projectCost": "",
+  "haircut": "30",
+  "sellCost": "3",
+  "maxLTV": "70",
+  "minDSCR": "1.2",
+  "seasonality": [
+   "1",
+   "1",
+   "1",
+   "1",
+   "1",
+   "1",
+   "1",
+   "1",
+   "1",
+   "1",
+   "1",
+   "1"
+  ]
+ },
+ "assets": [
+  {
+   "name": "21 butas + parkavimo vieta",
+   "inColl": true,
+   "market": "191000",
+   "valDate": "",
+   "source": "Appraisal",
+   "haircut": "",
+   "saleDate": "",
+   "salePrice": "",
+   "sweep": "",
+   "minPrice": "",
+   "notary": "",
+   "acqPrice": "130000",
+   "alloc": "120000",
+   "rent": "17000/12",
+   "area": "34",
+   "notes": ""
+  },
+  {
+   "name": "65 butas + parkavimo vieta",
+   "inColl": true,
+   "market": "246000",
+   "valDate": "",
+   "source": "Appraisal",
+   "haircut": "",
+   "saleDate": "",
+   "salePrice": "",
+   "sweep": "",
+   "minPrice": "",
+   "notary": "",
+   "acqPrice": "165000",
+   "alloc": "135000",
+   "rent": "20000/12",
+   "area": "57",
+   "notes": ""
+  },
+  {
+   "name": "78 butas + parkavimo vieta",
+   "inColl": true,
+   "market": "191000",
+   "valDate": "",
+   "source": "Appraisal",
+   "haircut": "",
+   "saleDate": "",
+   "salePrice": "",
+   "sweep": "",
+   "minPrice": "",
+   "notary": "",
+   "acqPrice": "150000",
+   "alloc": "130000",
+   "rent": "17000/12",
+   "area": "44",
+   "notes": ""
+  }
+ ],
+ "adjustments": [
+  {
+   "desc": "Maintenance",
+   "type": "Expense",
+   "date": "2026-11-01",
+   "recurrence": "Monthly",
+   "end": "2029-04-30",
+   "amount": "100",
+   "notes": ""
+  },
+  {
+   "desc": "Renovation",
+   "type": "Expense",
+   "date": "2026-11-01",
+   "recurrence": "Monthly",
+   "end": "2027-01-01",
+   "amount": "36000/3",
+   "notes": ""
+  }
+ ],
+ "scenarios": [
+  {
+   "name": "Base",
+   "rev": "0",
+   "opex": "0",
+   "rentDelay": "0",
+   "rate": "0",
+   "salePrice": "0",
+   "saleDelay": "0",
+   "value": "0",
+   "capex": "0"
+  },
+  {
+   "name": "Rent -10%",
+   "rev": "-10",
+   "opex": "0",
+   "rentDelay": "0",
+   "rate": "0",
+   "salePrice": "0",
+   "saleDelay": "0",
+   "value": "0",
+   "capex": "0"
+  },
+  {
+   "name": "Rent -20%, opex +10%",
+   "rev": "-20",
+   "opex": "10",
+   "rentDelay": "0",
+   "rate": "0",
+   "salePrice": "0",
+   "saleDelay": "0",
+   "value": "0",
+   "capex": "0"
+  },
+  {
+   "name": "Rate +2 pp",
+   "rev": "0",
+   "opex": "0",
+   "rentDelay": "0",
+   "rate": "2",
+   "salePrice": "0",
+   "saleDelay": "0",
+   "value": "0",
+   "capex": "0"
+  },
+  {
+   "name": "Rent 3 m late, capex +20%",
+   "rev": "0",
+   "opex": "0",
+   "rentDelay": "3",
+   "rate": "0",
+   "salePrice": "0",
+   "saleDelay": "0",
+   "value": "0",
+   "capex": "20"
+  },
+  {
+   "name": "Sales -15%, 6 m late",
+   "rev": "0",
+   "opex": "0",
+   "rentDelay": "0",
+   "rate": "0",
+   "salePrice": "-15",
+   "saleDelay": "6",
+   "value": "0",
+   "capex": "0"
+  },
+  {
+   "name": "Value -20%",
+   "rev": "0",
+   "opex": "0",
+   "rentDelay": "0",
+   "rate": "0",
+   "salePrice": "0",
+   "saleDelay": "0",
+   "value": "-20",
+   "capex": "0"
+  },
+  {
+   "name": "Severe combined",
+   "rev": "-20",
+   "opex": "15",
+   "rentDelay": "3",
+   "rate": "2",
+   "salePrice": "-20",
+   "saleDelay": "6",
+   "value": "-25",
+   "capex": "25"
+  }
+ ],
+ "grid": {
+  "rowDriver": "rev",
+  "colDriver": "rate",
+  "rowVals": [
+   "-30",
+   "-20",
+   "-10",
+   "0",
+   "10"
+  ],
+  "colVals": [
+   "0",
+   "1",
+   "2",
+   "3",
+   "4"
+  ]
+ }
+}

@@ -1,0 +1,119 @@
+{
+ "name": "Test new build, Kaunas",
+ "inputs": {
+  "currency": "EUR",
+  "drawdown": "2027-01-01",
+  "horizon": "30",
+  "loan": "0",
+  "tranchesOn": true,
+  "trancheMode": "dates",
+  "rate": "12",
+  "term": "30",
+  "repayType": "Bullet",
+  "arrFee": "5",
+  "feeBasis": "facility",
+  "feeTreatment": "withheld",
+  "sweepDefault": "100",
+  "saleRepay": "sweep",
+  "sweepBasis": "Gross sale price",
+  "intTiming": "monthly",
+  "saleOrder": "interestFirst",
+  "payMonths": [
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true
+  ],
+  "refinanced": "1500000",
+  "equityAuto": false,
+  "equity": "0",
+  "haircut": "30",
+  "sellCost": "3",
+  "maxLTV": "70",
+  "constrOn": true,
+  "worksStart": "2027-01-01",
+  "worksEnd": "2028-03-31",
+  "contingency": "10",
+  "spendCurve": "scurve",
+  "fundingOrder": "proRata",
+  "constrEquity": "300000",
+  "collCredit": "0",
+  "costVatOn": false,
+  "costVatRate": "21",
+  "costVatLag": "2",
+  "saleVatMode": "excl",
+  "saleVatRate": "21"
+ },
+ "tranches": [
+  {
+   "date": "2027-01-01",
+   "amount": "1700000",
+   "label": "Refinancing"
+  },
+  {
+   "date": "2027-03-01",
+   "amount": "500000",
+   "label": "Works 1"
+  },
+  {
+   "date": "2027-09-01",
+   "amount": "500000",
+   "label": "Works 2"
+  }
+ ],
+ "constrLines": [
+  {
+   "name": "Shell and roof",
+   "budget": "800000",
+   "spent": "200000"
+  },
+  {
+   "name": "Fit-out",
+   "budget": "600000",
+   "spent": "0"
+  }
+ ],
+ "assets": [
+  {
+   "name": "Building",
+   "inColl": true,
+   "market": "3000000",
+   "marketDone": "5000000"
+  },
+  {
+   "name": "Unit A",
+   "inColl": false,
+   "saleDate": "2028-02-15",
+   "salePrice": "1210000"
+  },
+  {
+   "name": "Unit B",
+   "inColl": false,
+   "saleDate": "2028-04-15",
+   "salePrice": "1815000"
+  },
+  {
+   "name": "Unit C",
+   "inColl": false,
+   "saleDate": "2028-06-15",
+   "salePrice": "1210000"
+  }
+ ],
+ "scenarios": [
+  {
+   "name": "Base"
+  },
+  {
+   "name": "Completion 6 m late",
+   "complDelay": "6"
+  }
+ ]
+}
