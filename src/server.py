@@ -10,7 +10,7 @@ its Gmail cache. Standard library only: no pip installs needed.
     python3 server.py --import x.json   import projects from a JSON export, then exit
     python3 server.py --port 9000  use another port
     python3 server.py --init-drive FOLDER   set up the shared folder (once per team)
-    python3 server.py --migrate-from ~/Deal\ Desk   move a pre-drive deals.sqlite with its documents to the shared folder
+    python3 server.py --migrate-from "~/Deal Desk"   move a pre-drive deals.sqlite with its documents to the shared folder
 """
 import argparse
 import datetime as dt
@@ -316,7 +316,8 @@ def connect():
 def migrate(con):
     """Add any column the current version expects but an older database lacks."""
     want = {"project_inputs": [(c, coltype(t)) for _, c, t in INPUT_FIELDS],
-            "projects": [(c, coltype(t).replace(" NOT NULL", "")) for _, c, t in PROJECT_FIELDS],
+            "projects": [(c, coltype(t).replace(" NOT NULL", "")) for _, c, t in PROJECT_FIELDS] +
+                        [(c, "TEXT") for c in ("grid_row_driver", "grid_col_driver", "grid_row_values", "grid_col_values")],
             "versions": [("parent_id", "INTEGER"), ("updated_at", "TEXT")],
             "activity": [("user", "TEXT")],
             "metrics": [(c, "TEXT" if c.endswith("_date") else "REAL") for _, c in METRIC_FIELDS]}
@@ -499,6 +500,7 @@ def all_projects():
         out = [load_project(con, r) for r in con.execute("SELECT * FROM projects ORDER BY updated_at DESC")]
         for p in out:  # the drive rev the app's copy starts from; a save based on an older one would undo someone's change
             p["_base"] = int(meta_get(con, f"extrev:{p['id']}") or 0)
+            p["_lock"] = public_lock(SYNC["locks"].get(p["id"]))
         return out
     finally:
         con.close()
@@ -613,6 +615,10 @@ def auto_import():
     for f in sorted(os.listdir(d)):
         if not f.endswith(".json") or f"imported:{f}" in done:
             continue
+        who = import_blocked(os.path.join(d, f))
+        if who:
+            print(f"{f} waits in the Inbox: {who} holds the lock", flush=True)
+            continue
         try:
             n = import_json(os.path.join(d, f), skip_existing=True)
             print(f"Imported {n} project(s) from {f}", flush=True)
@@ -651,7 +657,8 @@ DRIVE_MARK = ".deal-desk"   # marks the real root: without it (drive not mounted
 DEAL_SCHEMA = 1
 FLUSH_AFTER = float(os.environ.get("DEALDESK_FLUSH_SECONDS", "5"))  # batches typing into one drive write
 SYNC_EVERY = float(os.environ.get("DEALDESK_SYNC_SECONDS", "3"))
-SYNC = {"dirty": {}, "conflicts": {}, "seen": {}, "available": False, "error": "", "lastSync": None}
+SYNC = {"dirty": {}, "conflicts": {}, "seen": {}, "available": False, "error": "", "lastSync": None,
+        "locks": {}, "newlocks": {}, "unsaved": {}}
 SYNC_RUN = threading.Lock()   # one sync pass at a time
 ID_OK = re.compile(r"^[A-Za-z0-9._-]{1,80}$")
 
@@ -742,6 +749,8 @@ def drive_flush(pid):
     if disk is not None and int(disk.get("rev") or 0) != base:
         return drive_conflict(pid, d, deal, disk)
     os.makedirs(os.path.join(d, "versions"), exist_ok=True)
+    if pid in SYNC["newlocks"]:
+        write_claim(os.path.join(d, "locks"), SYNC["newlocks"][pid])
     keep = set()
     for v in versions:
         fn = os.path.join(d, "versions", f"{v['id']}.json")
@@ -775,6 +784,7 @@ def drive_flush(pid):
         if acts:
             meta_set(con, f"act:{pid}", str(acts[-1]["id"]))
     con.close()
+    SYNC["newlocks"].pop(pid, None)
 
 
 def drive_remove(pid, folder, acts):
@@ -789,6 +799,8 @@ def drive_remove(pid, folder, acts):
             for a in acts:
                 fh.write(json.dumps({"action": a["action"], "at": a["at"], "name": a["project_name"], "user": a["user"] or ME}, ensure_ascii=False) + "\n")
         SYNC["seen"].pop(folder, None)
+    SYNC["locks"].pop(pid, None)
+    SYNC["newlocks"].pop(pid, None)
     con = connect()
     with LOCK, con:
         con.execute("DELETE FROM meta WHERE key IN (?, ?, ?, ?, ?)", (f"rev:{pid}", f"folder:{pid}", f"act:{pid}", f"extrev:{pid}", f"extby:{pid}"))
@@ -940,11 +952,210 @@ def drive_sync(force=False):
                 if SYNC["dirty"].get(pid, (0, None))[1] == seq:
                     SYNC["dirty"].pop(pid, None)
             drive_scan()
+            scan_locks()
+            lock_heartbeat()
             SYNC["error"] = ""
             SYNC["lastSync"] = now()
         except OSError as e:
             SYNC["error"] = f"Could not reach the shared folder: {e}"
             print(SYNC["error"], flush=True)
+
+
+# ---- Locks. Only the person holding a deal's lock can change it; everyone else sees it read-only, and an unlocked deal
+# is read-only for all. A lock is a file Deals/<deal>/locks/<user>.json. Lock files cannot be made exclusive across Macs
+# (Drive syncs in seconds, not instantly), so taking a lock is claim → wait LOCK_SETTLE → confirm: the earliest claim
+# wins, a loser removes its own claim. Locks do not expire: they are a deliberate checkout and survive restarts.
+LOCK_SETTLE = float(os.environ.get("DEALDESK_LOCK_SETTLE", "6"))
+CLAIM_TIMEOUT = 60      # an unconfirmed claim older than this belongs to an app that stopped mid-claim
+HEARTBEAT = 300         # the holder refreshes lastActive this often while its app is open
+MY_LOCKFILE = re.sub(r"[^\w.@-]", "_", ME) + ".json"
+
+
+def lock_dir(pid):
+    con = connect()
+    folder = meta_get(con, f"folder:{pid}")
+    con.close()
+    return os.path.join(deals_dir(), folder, "locks") if folder else None
+
+
+def read_claims(d):
+    out = []
+    for f in sorted(os.listdir(d)) if d and os.path.isdir(d) else []:
+        c = read_json(os.path.join(d, f)) if f.endswith(".json") else None
+        if isinstance(c, dict) and c.get("user"):
+            c["_file"] = f
+            out.append(c)
+    return out
+
+
+def lock_holder(claims):
+    """The confirmed claim (earliest if Drive ever shows two); unconfirmed claims are a lock being taken, not held."""
+    held = sorted((c for c in claims if c.get("confirmed")), key=lambda c: (c.get("claimedAt") or "", c["user"]))
+    return held[0] if held else None
+
+
+def public_lock(c):
+    return {"user": c["user"], "since": c.get("confirmedAt") or c.get("claimedAt"), "lastActive": c.get("lastActive"), "me": c["user"] == ME} if c else None
+
+
+def write_claim(d, claim):
+    os.makedirs(d, exist_ok=True)
+    write_atomic(os.path.join(d, MY_LOCKFILE), dumps({k: v for k, v in claim.items() if not k.startswith("_")}))
+
+
+def precise_now():
+    return dt.datetime.now(dt.timezone.utc).isoformat(timespec="milliseconds")
+
+
+def scan_locks():
+    """Who holds each deal, from the lock files of every deal folder (plus deals created here, not yet on the drive)."""
+    locks = {}
+    con = connect()
+    folders = {r["key"][7:]: r["value"] for r in con.execute("SELECT key, value FROM meta WHERE key LIKE 'folder:%'")}
+    con.close()
+    for pid, folder in folders.items():
+        h = lock_holder(read_claims(os.path.join(deals_dir(), folder, "locks")))
+        if h:
+            locks[pid] = h
+    for pid, c in SYNC["newlocks"].items():
+        locks.setdefault(pid, c)
+    SYNC["locks"] = locks
+
+
+def holds(pid):
+    c = SYNC["locks"].get(pid)
+    return bool(c and c["user"] == ME)
+
+
+def is_new(pid):
+    """A deal nobody has saved yet (not in the index, no folder): whoever creates it holds its lock."""
+    con = connect()
+    try:
+        return not con.execute("SELECT 1 FROM projects WHERE id=?", (pid,)).fetchone() and not meta_get(con, f"folder:{pid}")
+    finally:
+        con.close()
+
+
+def edit_refusal(pid):
+    if holds(pid):
+        return None
+    c = SYNC["locks"].get(pid)
+    con = connect()
+    r = con.execute("SELECT name FROM projects WHERE id=?", (pid,)).fetchone()
+    con.close()
+    name = r["name"] if r else pid
+    if c:
+        return f"Read-only – {c['user']} is editing {name} (locked since {(c.get('confirmedAt') or c.get('claimedAt') or '')[11:16]} UTC)."
+    return f"Read-only – lock {name} to edit it."
+
+
+def keep_unsaved(pid, body):
+    """A refused save still holds what was typed: keep it next to the deal (one file per deal and session)."""
+    con = connect()
+    folder = meta_get(con, f"folder:{pid}")
+    con.close()
+    if not folder:
+        return None
+    fn = SYNC["unsaved"].get(pid) or os.path.join(deals_dir(), folder, f"deal.unsaved-{re.sub(r'[^\w.@-]', '_', ME)}-{dt.datetime.now():%Y%m%d-%H%M%S}.json")
+    try:
+        write_atomic(fn, dumps(dict(body, id=pid, savedBy=ME, savedAt=now())))
+    except OSError:
+        return None
+    SYNC["unsaved"][pid] = fn
+    return os.path.basename(fn)
+
+
+def claim_lock(pid, force=False):
+    """Take the lock: (ok, holder). force removes the current holder's claim first (logged in the deal's activity)."""
+    if holds(pid):
+        return True, SYNC["locks"][pid]
+    d = lock_dir(pid)
+    if not d:
+        return False, None
+    claims = read_claims(d)
+    held = lock_holder(claims)
+    if held and held["user"] != ME and not force:
+        return False, held
+    if force and held and held["user"] != ME:
+        for c in claims:
+            if c["_file"] != MY_LOCKFILE:
+                try:
+                    os.remove(os.path.join(d, c["_file"]))
+                except OSError:
+                    pass
+        log_activity(pid, f"took over the lock from {held['user']}")
+    mine = {"user": ME, "claimedAt": precise_now(), "lastActive": now(), "mac": os.uname().nodename, "confirmed": False}
+    write_claim(d, mine)
+    time.sleep(LOCK_SETTLE)
+    rivals = []
+    cutoff = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=CLAIM_TIMEOUT)).isoformat()
+    for c in read_claims(d):
+        if c["user"] == ME:
+            continue
+        if c.get("confirmed") or (c.get("claimedAt") or "") >= cutoff:
+            rivals.append(c)
+    first = min(rivals + [mine], key=lambda c: (not c.get("confirmed"), c.get("claimedAt") or "", c["user"]))
+    if first is not mine:
+        try:
+            os.remove(os.path.join(d, MY_LOCKFILE))
+        except OSError:
+            pass
+        return False, first
+    mine.update(confirmed=True, confirmedAt=now())
+    write_claim(d, mine)
+    SYNC["locks"][pid] = mine
+    SYNC["unsaved"].pop(pid, None)
+    return True, mine
+
+
+def release_lock(pid):
+    if not holds(pid):
+        return
+    if pid in SYNC["dirty"]:
+        drive_sync(force=True)  # what was typed goes to the drive before anyone else can take the deal
+    SYNC["newlocks"].pop(pid, None)
+    d = lock_dir(pid)
+    if d:
+        try:
+            os.remove(os.path.join(d, MY_LOCKFILE))
+        except OSError:
+            pass
+    SYNC["locks"].pop(pid, None)
+
+
+def lock_heartbeat():
+    if time.time() - LAST_SEEN[0] > HEARTBEAT:
+        return  # app closed: the lock stays, but it no longer looks active
+    stale = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=HEARTBEAT)).isoformat(timespec="seconds")
+    for pid, c in list(SYNC["locks"].items()):
+        if c["user"] == ME and pid not in SYNC["newlocks"] and (c.get("lastActive") or "") < stale:
+            d = lock_dir(pid)
+            if d and os.path.isfile(os.path.join(d, MY_LOCKFILE)):
+                c["lastActive"] = now()
+                write_claim(d, c)
+
+
+def log_activity(pid, action):
+    con = connect()
+    with LOCK, con:
+        r = con.execute("SELECT name FROM projects WHERE id=?", (pid,)).fetchone()
+        con.execute("INSERT INTO activity (project_id, project_name, action, at, user) VALUES (?, ?, ?, ?, ?)",
+                    (pid, r["name"] if r else None, action, now(), ME))
+    con.close()
+    drive_touch(pid)
+
+
+def import_blocked(path):
+    """An Inbox file that changes an existing deal locked by someone else waits until the lock is released."""
+    data = read_json(path)
+    items = [data] if isinstance(data, dict) and "inputs" in data else (list(data.values()) if isinstance(data, dict) else data or [])
+    for p in items:
+        pid = isinstance(p, dict) and p.get("id")
+        if pid and (p.get("_appendVersions") or p.get("_appendEmails") or p.get("_replace")):
+            c = SYNC["locks"].get(pid)
+            if c and c["user"] != ME:
+                return c["user"]
+    return None
 
 
 def drive_status():
@@ -955,9 +1166,11 @@ def drive_status():
 MAIL_TABLES = ("mail_messages", "mail_labels", "mail_allmail", "mail_threads")
 
 
-def migrate_to_drive(src, as_user, dry=False, with_mail=False):
+def migrate_to_drive(src, as_user, dry=False, with_mail=False, replace=False):
     """One-time move of a pre-drive data folder (deals.sqlite, documents/, import/) into the shared folder.
-    The source is only read (from a copy). Deals already on the drive are left alone, so it can be run again.
+    The source is only read (from a copy). Deals already on the drive are left alone, so it can be run again – unless
+    replace: then they are written again from the source (switch-over day), the drive's copy kept as
+    deal.before-replace-<time>.json; a deal someone holds the lock on is skipped.
     Old activity has no user and is credited to as_user. with_mail: also load this Mac's Gmail cache into its local index."""
     import shutil
     import tempfile
@@ -982,9 +1195,17 @@ def migrate_to_drive(src, as_user, dry=False, with_mail=False):
             report.append(f"SKIPPED {row['name']}: id {pid!r} cannot be a folder name")
             continue
         have = [f for f in os.listdir(root) if f.endswith(f"({pid})") and os.path.isfile(os.path.join(root, f, "deal.json"))]
-        if have:
+        old = None
+        if have and not replace:
             report.append(f"already on the drive: {have[0]}")
             continue
+        if have:
+            held = lock_holder(read_claims(os.path.join(root, have[0], "locks")))
+            if held:
+                report.append(f"SKIPPED {have[0]}: {held['user']} holds the lock")
+                continue
+            with open(os.path.join(root, have[0], "deal.json"), encoding="utf-8") as fh:
+                old = fh.read()
         deal = export_deal(d, pid)
         versions = export_versions(d, pid)
         acts = d.execute("SELECT * FROM activity WHERE project_id=? ORDER BY id", (pid,)).fetchall()
@@ -998,12 +1219,17 @@ def migrate_to_drive(src, as_user, dry=False, with_mail=False):
         for f in sorted(os.listdir(extra)) if os.path.isdir(extra) else []:
             if f not in names and os.path.isfile(os.path.join(extra, f)) and not f.startswith("."):
                 docs.append((os.path.join(extra, f), safe_name(f)))
-        folder = os.path.join(root, folder_for(deal.get("name"), pid))
-        report.append(f"{'would move' if dry else 'moved'}: {os.path.basename(folder)} – {len(versions)} versions, {len(acts)} activity, "
+        folder = os.path.join(root, have[0] if have else folder_for(deal.get("name"), pid))
+        report.append(f"{('would replace' if dry else 'replaced') if have else ('would move' if dry else 'moved')}: {os.path.basename(folder)} – {len(versions)} versions, {len(acts)} activity, "
                       f"{len(docs)} documents{', decision log' if deal.get('judgement') else ''}")
         if dry:
             continue
         os.makedirs(os.path.join(folder, "versions"), exist_ok=True)
+        if old is not None:
+            write_atomic(os.path.join(folder, f"deal.before-replace-{dt.datetime.now():%Y%m%d-%H%M%S}.json"), old)
+            for f in os.listdir(os.path.join(folder, "versions")):
+                if f.endswith(".json") and f not in {f"{v['id']}.json" for v in versions}:
+                    os.remove(os.path.join(folder, "versions", f))
         for v in versions:
             write_atomic(os.path.join(folder, "versions", f"{v['id']}.json"), dumps(v))
         if acts:
@@ -1015,7 +1241,8 @@ def migrate_to_drive(src, as_user, dry=False, with_mail=False):
             os.makedirs(os.path.dirname(dest), exist_ok=True)
             if not os.path.exists(dest):
                 shutil.copy2(fp, dest)
-        deal.update(id=pid, rev=1, schema=DEAL_SCHEMA, savedBy=as_user, savedAt=now())
+        rev = int((json.loads(old).get("rev") if old else 0) or 0) + 1  # a higher rev, so every Mac reloads it
+        deal.update(id=pid, rev=rev, schema=DEAL_SCHEMA, savedBy=as_user, savedAt=now())
         write_atomic(os.path.join(folder, "deal.json"), dumps(deal))  # last: a folder without deal.json is unfinished and is redone
     imp = os.path.join(src, "import")
     done = os.path.join(DRIVE, "Inbox", "Imported")
@@ -1671,7 +1898,6 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(chunk)
 
     def handle_one_request(self):
-        import time
         LAST_SEEN[0] = time.time()
         return super().handle_one_request()
 
@@ -1695,10 +1921,19 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/projects":
             if not DRIVE:
                 return self.send_json({"error": NO_DRIVE}, 503)
+            drive_sync()   # first: the Inbox import needs to know who holds which deal now
             auto_import()  # picks up files dropped into the Inbox while the app is running
-            drive_sync()
             SYNC["conflicts"].clear()  # the app reloads the drive's version, so editing can continue from it
             return self.send_json(all_projects())
+        if path == "/api/locks":  # polled by the app: who holds what, and the latest drive rev of every deal
+            con = connect()
+            revs = {r["key"][7:]: int(r["value"]) for r in con.execute("SELECT key, value FROM meta WHERE key LIKE 'extrev:%'")}
+            con.close()
+            return self.send_json({"me": ME, "locks": {pid: public_lock(c) for pid, c in SYNC["locks"].items()}, "revs": revs, "storage": drive_status()})
+        m = re.match(r"^/api/projects/([^/]+)$", path)
+        if m:
+            got = [p for p in all_projects() if p["id"] == m.group(1)]
+            return self.send_json(got[0]) if got else self.send_json({"error": "not found"}, 404)
         if path == "/api/info":
             backups = sorted(os.listdir(BACKUP_DIR)) if os.path.isdir(BACKUP_DIR) else []
             return self.send_json({"db": DB_PATH, "size": os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else 0,
@@ -1855,6 +2090,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"error": "bad json"}, 400)
             if not DRIVE:
                 return self.send_json({"error": "Not saved – " + NO_DRIVE}, 503)
+            if is_new(pid) and pid not in SYNC["locks"]:
+                c = {"user": ME, "claimedAt": precise_now(), "confirmedAt": now(), "lastActive": now(), "mac": os.uname().nodename, "confirmed": True}
+                SYNC["newlocks"][pid] = SYNC["locks"][pid] = c
+            refusal = edit_refusal(pid)
+            if refusal:
+                kept = keep_unsaved(pid, p)
+                return self.send_json({"error": "Not saved – " + refusal + (f" What you typed is kept in {kept} in the deal's folder." if kept else ""),
+                                       "lock": public_lock(SYNC["locks"].get(pid))}, 423)
             if pid not in SYNC["conflicts"]:
                 stale_save(pid, p.get("_base"))
             p.pop("_base", None)
@@ -1884,6 +2127,9 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK, con:
                 vid = int(m.group(1))
                 owner = con.execute("SELECT project_id FROM versions WHERE id=?", (vid,)).fetchone()
+                if owner and edit_refusal(owner["project_id"]):
+                    con.close()
+                    return self.send_json({"error": "Not saved – " + edit_refusal(owner["project_id"])}, 423)
                 if owner:
                     drive_touch(owner["project_id"])
                 if "data" in b:
@@ -1898,9 +2144,15 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if not self.same_origin():
             return self.send_json({"error": "forbidden"}, 403)
+        m = re.match(r"^/api/projects/([^/]+)/lock$", path)
+        if m:
+            release_lock(m.group(1))
+            return self.send_json({"ok": True})
         m = re.match(r"^/api/projects/([^/]+)$", path)
         if m:
             pid = m.group(1)
+            if edit_refusal(pid):
+                return self.send_json({"error": "Not deleted – " + edit_refusal(pid)}, 423)
             con = connect()
             with LOCK, con:
                 row = con.execute("SELECT name FROM projects WHERE id=?", (pid,)).fetchone()
@@ -1915,6 +2167,9 @@ class Handler(BaseHTTPRequestHandler):
             con = connect()
             with LOCK, con:
                 owner = con.execute("SELECT project_id FROM versions WHERE id=?", (int(m.group(1)),)).fetchone()
+                if owner and edit_refusal(owner["project_id"]):
+                    con.close()
+                    return self.send_json({"error": "Not deleted – " + edit_refusal(owner["project_id"])}, 423)
                 con.execute("DELETE FROM versions WHERE id=?", (int(m.group(1)),))
             con.close()
             if owner:
@@ -1940,12 +2195,29 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/storage/sync":
             drive_sync(force=True)
             return self.send_json(dict(ok=not SYNC["error"], **drive_status()))
+        m = re.match(r"^/api/projects/([^/]+)/lock$", path)
+        if m:
+            pid = m.group(1)
+            try:
+                b = self.body()
+            except ValueError:
+                b = {}
+            drive_sync()
+            ok, c = claim_lock(pid, force=bool(b.get("force")))
+            if not ok:
+                return self.send_json({"error": f"{c['user']} is editing this deal." if c else "This deal is not on the shared drive yet.",
+                                       "lock": public_lock(c)}, 409)
+            drive_sync()  # start editing from the latest copy on the drive
+            got = [p for p in all_projects() if p["id"] == pid]
+            return self.send_json({"ok": True, "lock": public_lock(c), "project": got[0] if got else None})
         m = re.match(r"^/api/projects/([^/]+)/versions$", path)
         if m:
             try:
                 b = self.body()
             except ValueError:
                 return self.send_json({"error": "bad json"}, 400)
+            if edit_refusal(m.group(1)):
+                return self.send_json({"error": "Not saved – " + edit_refusal(m.group(1))}, 423)
             con = connect()
             with LOCK, con:
                 if not con.execute("SELECT 1 FROM projects WHERE id=?", (m.group(1),)).fetchone():
@@ -1972,12 +2244,13 @@ def main():
     ap.add_argument("--as-user", default="Tautvydas", help="with --migrate-from: who old activity is credited to")
     ap.add_argument("--dry-run", action="store_true", help="with --migrate-from: only report what would move")
     ap.add_argument("--with-mail", action="store_true", help="with --migrate-from: also load that folder's Gmail cache into this Mac's index")
+    ap.add_argument("--replace", action="store_true", help="with --migrate-from: write deals already on the drive again from the source (unless locked)")
     a = ap.parse_args()
     if a.init_drive:
         print(f"Shared folder ready: {init_drive(a.init_drive)}\nSettings: {os.path.join(DATA, 'config.json')} – restart Deal Desk to use it.")
         return
     if a.migrate_from:
-        print("\n".join(migrate_to_drive(os.path.expanduser(a.migrate_from), a.as_user, dry=a.dry_run, with_mail=a.with_mail)))
+        print("\n".join(migrate_to_drive(os.path.expanduser(a.migrate_from), a.as_user, dry=a.dry_run, with_mail=a.with_mail, replace=a.replace)))
         return
     init_db()
     if a.imp:
@@ -2013,7 +2286,6 @@ def main():
     if not a.no_browser:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
     if a.idle_exit > 0:
-        import time
         LAST_SEEN[0] = time.time()
 
         def watchdog():
