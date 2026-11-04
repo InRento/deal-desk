@@ -111,7 +111,7 @@ class DriveTest(unittest.TestCase):
         with open(os.path.join(self.tmp, "a", "config.json")) as fh:
             self.assertEqual(json.load(fh)["driveRoot"], self.drive)
         info = self.a.call("GET", "/api/info")["storage"]
-        self.assertEqual((info["mode"], info["user"], info["available"]), ("drive", "a@example.com", True))
+        self.assertEqual((info["root"], info["user"], info["available"]), (self.drive, "a@example.com", True))
         self.assertFalse(glob.glob(os.path.join(self.drive, "**", "*.sqlite"), recursive=True), "no database on the drive")
 
     def test_02_save_reaches_the_other_mac(self):
@@ -256,6 +256,19 @@ class DriveTest(unittest.TestCase):
         self.assertFalse(glob.glob(os.path.join(self.drive, "Deals", "* (t10)")))
         c.stop()
         self.assertEqual(self.disk("t10")["savedBy"], "c@example.com")
+
+    def test_11_no_shared_folder(self):
+        n = Mac(self.tmp, "n", "n@example.com", "")
+        try:
+            with self.assertRaises(urllib.error.HTTPError) as e:
+                n.projects()
+            self.assertEqual(e.exception.code, 503)
+            self.assertIn("No shared Deal Desk folder", json.loads(e.exception.read())["error"])
+            with self.assertRaises(urllib.error.HTTPError) as e:
+                n.save("x1", deal("x1", "Nowhere to go"))
+            self.assertEqual(e.exception.code, 503)
+        finally:
+            n.stop()
 
 
 if __name__ == "__main__":

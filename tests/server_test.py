@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Server tests: storage, versions, import folder, backups, same-origin guard and the read-only Gmail sync.
+"""Server tests: storage, versions, inbox, backups, same-origin guard and the read-only Gmail sync.
 
-Runs the real server.py on a temporary data folder against a small fake Gmail (tests/fake_imap.py).
+Runs the real server.py on a temporary data folder and a temporary shared folder against a small fake Gmail (tests/fake_imap.py).
 Standard library only:  python3 tests/server_test.py
 """
 import json
@@ -64,14 +64,18 @@ class ServerTest(unittest.TestCase):
     def setUpClass(cls):
         cls.tmp = tempfile.mkdtemp(prefix="dealdesk-test-")
         cls.data = os.path.join(cls.tmp, "data")
-        os.makedirs(os.path.join(cls.data, "import"))
+        cls.drive = os.path.join(cls.tmp, "drive")  # always a temporary shared folder: never the real one on this Mac
+        os.makedirs(os.path.join(cls.drive, "Inbox"))
+        with open(os.path.join(cls.drive, ".deal-desk"), "w") as fh:
+            fh.write("{}")
         fx = os.path.join(cls.tmp, "fixture.json")
         with open(fx, "w") as fh:
             json.dump(FIXTURE, fh)
         cls.imap_log = os.path.join(cls.tmp, "imap.log")
         cls.imap_port, cls.port = free_port(), free_port()
         cls.imap = subprocess.Popen([sys.executable, FAKE, str(cls.imap_port), fx, cls.imap_log], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        env = dict(os.environ, DEALDESK_DATA=cls.data, DEALDESK_FAKE_KEYCHAIN="1", DEALDESK_IMAP_HOST="127.0.0.1",
+        env = dict(os.environ, DEALDESK_DATA=cls.data, DEALDESK_DRIVE=cls.drive, DEALDESK_USER="me@example.com", DEALDESK_FLUSH_SECONDS="0",
+                   DEALDESK_FAKE_KEYCHAIN="1", DEALDESK_IMAP_HOST="127.0.0.1",
                    DEALDESK_IMAP_PORT=str(cls.imap_port), DEALDESK_IMAP_PLAIN="1")
         cls.log = open(os.path.join(cls.tmp, "server.log"), "w")
         cls.srv = subprocess.Popen([sys.executable, SERVER, "--port", str(cls.port), "--no-browser"], env=env, stdout=cls.log, stderr=subprocess.STDOUT)
@@ -145,7 +149,7 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(self.call("GET", "/api/projects/t1/versions"), [])
 
     def test_04_import_folder(self):
-        imp = os.path.join(self.data, "import")
+        imp = os.path.join(self.drive, "Inbox")
         def put(name, obj):
             with open(os.path.join(imp, name), "w") as fh:
                 json.dump(obj, fh)
@@ -154,7 +158,6 @@ class ServerTest(unittest.TestCase):
         ids = {p["id"]: p for p in self.call("GET", "/api/projects")}
         self.assertIn("t3", ids)
         self.assertEqual(len(self.call("GET", "/api/projects/t3/versions")), 1)
-        self.assertFalse(os.path.exists(os.path.join(self.data, "documents", "t3")), "attached files are no longer stored")
         # the same file is not imported twice; a later file can append emails without touching the inputs
         put("b.json", {"id": "t3", "inputs": {"loan": "1"}, "_appendEmails": True, "_emailSummary": {"text": "Owner sends the appraisal.", "date": "2026-10-20"},
                    "_todos": [{"text": "Chase appraisal"}, {"text": "chase appraisal"}]})
@@ -204,7 +207,7 @@ class ServerTest(unittest.TestCase):
 
     def test_08_password_never_written_to_disk(self):
         self.call("PUT", "/api/mail/settings", {"address": "me@example.com", "password": PASSWORD})
-        for root, _, files in os.walk(self.data):
+        for root, _, files in list(os.walk(self.data)) + list(os.walk(self.drive)):
             for f in files:
                 with open(os.path.join(root, f), "rb") as fh:
                     self.assertNotIn(PASSWORD.encode(), fh.read(), f)

@@ -106,7 +106,7 @@ const devOf = (s) => Object.fromEntries(DRIVERS.map((d) => [d.k, d.pct ? E.pct(s
 const S = { projects: {}, view: 'home', curId: null, tab: 'overview', cfMode: 'monthly', filter: 'All', q: '', model: null, dirty: new Set(), saving: 0, saveErr: null, store: 'connecting', confirmDel: false, ver: {}, versions: null, openLine: null };
 const cur = () => S.projects[S.curId];
 
-// ---------- persistence: local SQLite via server.py ----------
+// ---------- persistence: server.py keeps the deals in the shared Google Drive folder ----------
 const timers = {}; const chains = {};
 async function api(method, path, body, raw) {
   const r = await fetch(path, { method, headers: body && !raw ? { 'Content-Type': 'application/json' } : {}, body: raw ? body : body ? JSON.stringify(body) : undefined });
@@ -119,7 +119,7 @@ async function initStore() {
     S.projects = {}; S.base = {}; for (const p of list) { S.base[p.id] = p._base; delete p._base; S.projects[p.id] = normalise(p); }
     S.store = 'sqlite'; S.loaded = true;
     try { S.info = await api('GET', '/api/info'); } catch {}
-  } catch (e) { S.store = 'offline'; }
+  } catch (e) { S.store = 'offline'; S.storeErr = /shared Deal Desk folder/.test(e.message) ? e.message : null; }
   render();
   mailBoot();
 }
@@ -163,7 +163,7 @@ async function backupDb() { try { const r = await api('POST', '/api/backup'); to
 function renderSaveState() {
   const el = $('#savestate'); if (!el) return;
   el.classList.toggle('err', !!S.saveErr || S.store === 'offline');
-  el.textContent = S.saveErr ? S.saveErr : S.store === 'offline' ? 'Server not running – changes are not saved' : (S.saving || (S.curId && S.dirty.has(S.curId))) ? 'Saving…' : S.store === 'sqlite' ? 'Saved to deals.sqlite' : 'Connecting…';
+  el.textContent = S.saveErr ? S.saveErr : S.store === 'offline' ? (S.storeErr ? 'Shared folder not found – changes are not saved' : 'Server not running – changes are not saved') : (S.saving || (S.curId && S.dirty.has(S.curId))) ? 'Saving…' : S.store === 'sqlite' ? 'Saved to the shared folder' : 'Connecting…';
 }
 let toastT; function toast(msg) { let t = $('#toast'); if (!t) { t = document.createElement('div'); t.id = 'toast'; t.className = 'toast'; t.setAttribute('role', 'status'); document.body.appendChild(t); } t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => (t.hidden = true), 3000); }
 

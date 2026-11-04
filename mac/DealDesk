@@ -1,6 +1,7 @@
 #!/bin/bash
 # InRento Deal Desk launcher.
-# Program files live inside this app; data (database, documents, backups) in ~/Deal Desk.
+# Program files live inside this app; deals in the shared Deal Desk folder on Google Drive (found by the server);
+# this Mac's index, Gmail cache and log in ~/Deal Desk.
 # Files are opened by this script itself (shell redirects), so macOS folder protection does not block child tools.
 RES="$(cd "$(dirname "$0")/../Resources" && pwd)"
 DATA="$HOME/Deal Desk"
@@ -23,13 +24,6 @@ echo "$(date) launching from $RES" >> "$LOG"
 for f in server.py index.html xlsx.full.min.js jspdf.umd.min.js html2canvas.min.js; do
   /bin/cat < "$RES/$f" > "$DATA/app/$f" 2>> "$LOG" || fail "Could not copy $f."
 done
-# 2. database: first launch starts from the copy shipped with the app (empty in packages made by package.sh)
-if [ ! -f "$DATA/deals.sqlite" ]; then /bin/cat < "$RES/seed.sqlite" > "$DATA/deals.sqlite" 2>> "$LOG" || fail "Could not create the database."; fi
-# 2b. one-time imports shipped with the app (the server imports each file once)
-if [ -d "$RES/import" ]; then
-  mkdir -p "$DATA/import"
-  for f in "$RES"/import/*.json; do [ -f "$f" ] && /bin/cat < "$f" > "$DATA/import/$(basename "$f")" 2>> "$LOG"; done
-fi
 # 3. bundled Python (unpacked once)
 PY="$DATA/runtime/python/bin/python3"
 if [ ! -x "$PY" ]; then

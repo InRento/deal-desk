@@ -13,7 +13,9 @@ const check = (ok, what, got) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}$
 
 (async () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dealdesk-ui-')), port = await freePort();
-  const srv = spawn('python3', [process.env.DIST ? path.join(process.env.DIST, 'server.py') : path.join(ROOT, 'dist', 'server.py'), '--port', String(port), '--no-browser'], { env: Object.assign({}, process.env, { DEALDESK_DATA: tmp }), stdio: 'ignore' });
+  // always a temporary shared folder: never the real one on this Mac
+  const drive = path.join(tmp, 'drive'); fs.mkdirSync(drive); fs.writeFileSync(path.join(drive, '.deal-desk'), '{}');
+  const srv = spawn('python3', [process.env.DIST ? path.join(process.env.DIST, 'server.py') : path.join(ROOT, 'dist', 'server.py'), '--port', String(port), '--no-browser'], { env: Object.assign({}, process.env, { DEALDESK_DATA: tmp, DEALDESK_DRIVE: drive, DEALDESK_USER: 'test@example.com', DEALDESK_FLUSH_SECONDS: '0' }), stdio: 'ignore' });
   await sleep(1500);
   const browser = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
   const ctx = await browser.newContext({ acceptDownloads: true, viewport: { width: 1440, height: 900 } });
@@ -92,11 +94,12 @@ const check = (ok, what, got) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}$
     check((await text('[data-out="a-0-pays"]')).includes('10% Mar 27'), 'payment plan splits the sale into instalments', await text('[data-out="a-0-pays"]'));
     // 10 Emails tab without Gmail
     await tab('emails'); check((await text('#tabbody')).length > 0, 'Emails tab renders without Gmail');
-    // 11 saved to the database
+    // 11 saved to the shared folder
     await sleep(1500); await pg.reload(); await sleep(1200);
     check((await text('#app')).includes('Test Tower, Riga'), 'project is still there after a reload');
+    check(fs.readdirSync(path.join(drive, 'Deals')).some((f) => f.startsWith('Test Tower, Riga (') && fs.existsSync(path.join(drive, 'Deals', f, 'deal.json'))), 'project written to the shared folder');
   } catch (e) { console.log('FAIL', e.message); failures++; }
   check(!errors.length, 'no page errors', errors.join(' | '));
-  await browser.close(); srv.kill(); fs.rmSync(tmp, { recursive: true, force: true });
+  await browser.close(); srv.kill(); await new Promise((r) => srv.exitCode !== null ? r() : srv.on('exit', r)); fs.rmSync(tmp, { recursive: true, force: true }); // the server writes pending deals on exit
   console.log(failures ? `${failures} FAILED` : 'ALL PASSED'); process.exitCode = failures ? 1 : 0;
 })();

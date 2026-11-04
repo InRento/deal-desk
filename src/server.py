@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """InRento Deal Desk – local server.
 
-Serves the app at http://127.0.0.1:8765 and stores every project in deals.sqlite
-(next to this file). Files attached in earlier versions stay in documents/<project id>/ but are no
-longer shown or added. Standard library only: no pip installs needed.
+Serves the app at http://127.0.0.1:8765. Deals live in the shared Deal Desk folder on Google Drive (a Shared Drive
+synced by Google Drive for Desktop); the SQLite database next to the data folder is only this Mac's index of it plus
+its Gmail cache. Standard library only: no pip installs needed.
 
     python3 server.py              start the app and open the browser
     python3 server.py --no-browser start without opening a browser
     python3 server.py --import x.json   import projects from a JSON export, then exit
     python3 server.py --port 9000  use another port
+    python3 server.py --init-drive FOLDER   set up the shared folder (once per team)
+    python3 server.py --migrate-from ~/Deal\ Desk   move a pre-drive deals.sqlite with its documents to the shared folder
 """
 import argparse
 import datetime as dt
@@ -30,9 +32,7 @@ from urllib.parse import urlparse, parse_qs, quote
 
 HERE = os.path.dirname(os.path.abspath(__file__))           # program files (index.html, xlsx)
 DATA = os.environ.get("DEALDESK_DATA") or HERE               # database, documents, backups
-DB_PATH = os.path.join(DATA, "deals.sqlite")
 BACKUP_DIR = os.path.join(DATA, "backups")
-DOC_DIR = os.path.join(DATA, "documents")
 STATIC = {"/": ("index.html", "text/html; charset=utf-8"),
           "/index.html": ("index.html", "text/html; charset=utf-8"),
           "/xlsx.full.min.js": ("xlsx.full.min.js", "application/javascript"),
@@ -41,15 +41,22 @@ STATIC = {"/": ("index.html", "text/html; charset=utf-8"),
 SCHEMA_VERSION = 2
 
 
+def find_drive():
+    """The shared folder when none is configured: the one Google Shared Drive folder holding the Deal Desk marker."""
+    import glob
+    hits = glob.glob(os.path.expanduser("~/Library/CloudStorage/GoogleDrive-*/Shared drives/*/.deal-desk"))
+    return os.path.dirname(hits[0]) if len(hits) == 1 else ""
+
+
 def load_config():
-    """Shared folder (Google Drive) settings: env vars win over <data>/config.json; no drive root = local mode."""
+    """Shared folder (Google Drive) settings: env vars win over <data>/config.json, which wins over finding it."""
     cfg = {}
     try:
         with open(os.path.join(DATA, "config.json"), encoding="utf-8") as fh:
             cfg = json.load(fh)
     except (OSError, ValueError):
         pass
-    root = os.environ.get("DEALDESK_DRIVE") or cfg.get("driveRoot") or ""
+    root = os.environ["DEALDESK_DRIVE"] if "DEALDESK_DRIVE" in os.environ else (cfg.get("driveRoot") or find_drive())
     m = re.search(r"GoogleDrive-([^/]+@[^/]+)", root)
     user = os.environ.get("DEALDESK_USER") or cfg.get("user") or (m.group(1) if m else getpass.getuser())
     return {"driveRoot": root, "user": user}
@@ -58,8 +65,10 @@ def load_config():
 CONFIG = load_config()
 DRIVE = CONFIG["driveRoot"]
 ME = CONFIG["user"]
-if DRIVE:  # the local database is only an index of the drive files; deals.sqlite stays untouched as the pre-drive copy
-    DB_PATH = os.path.join(DATA, "drive-index.sqlite")
+# Only an index of the drive. A pre-drive deals.sqlite in the same folder is left untouched (source for --migrate-from).
+DB_PATH = os.path.join(DATA, "drive-index.sqlite")
+NO_DRIVE = ("No shared Deal Desk folder found. Open Google Drive for Desktop, check that the \u201cDeal desk\u201d shared drive "
+            "shows in Finder, then reopen Deal Desk.")
 APP_VERSION = "3.18.0"  # bump when the program changes; the launcher restarts an older running server
 
 # ---------------------------------------------------------------------------
@@ -321,6 +330,7 @@ def migrate(con):
 
 
 def init_db():
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     con = connect()
     with con:
         con.executescript(SCHEMA)
@@ -487,9 +497,8 @@ def all_projects():
     con = connect()
     try:
         out = [load_project(con, r) for r in con.execute("SELECT * FROM projects ORDER BY updated_at DESC")]
-        if DRIVE:  # the drive rev the app's copy starts from; a save based on an older one would undo someone's change
-            for p in out:
-                p["_base"] = int(meta_get(con, f"extrev:{p['id']}") or 0)
+        for p in out:  # the drive rev the app's copy starts from; a save based on an older one would undo someone's change
+            p["_base"] = int(meta_get(con, f"extrev:{p['id']}") or 0)
         return out
     finally:
         con.close()
@@ -593,10 +602,10 @@ def append_emails(con, pid, p):
 
 
 def auto_import():
-    """Import each JSON file dropped in <data>/import (drive mode: <drive>/Inbox) once (projects whose id already exists
-    are left alone). On the drive an imported file moves to Inbox/Imported, so every Mac sees it as done."""
-    d = os.path.join(DRIVE, "Inbox") if DRIVE else os.path.join(DATA, "import")
-    if not os.path.isdir(d) or (DRIVE and not drive_available()):
+    """Import each JSON file dropped in <drive>/Inbox once (projects whose id already exists are left alone).
+    An imported file moves to Inbox/Imported, so every Mac sees it as done."""
+    d = os.path.join(DRIVE, "Inbox")
+    if not drive_available() or not os.path.isdir(d):
         return
     con = connect()
     done = {r["key"] for r in con.execute("SELECT key FROM meta WHERE key LIKE 'imported:%'")}
@@ -614,16 +623,15 @@ def auto_import():
         with con:
             con.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)", (f"imported:{f}", now()))
         con.close()
-        if DRIVE:
-            done_dir = os.path.join(d, "Imported")
-            os.makedirs(done_dir, exist_ok=True)
-            dest = os.path.join(done_dir, f)
-            if os.path.exists(dest):
-                dest = os.path.join(done_dir, f"{f[:-5]} {dt.datetime.now():%Y%m%d-%H%M%S}.json")
-            try:
-                os.replace(os.path.join(d, f), dest)
-            except OSError as e:
-                print(f"Could not move {f} to Imported: {e}", flush=True)
+        done_dir = os.path.join(d, "Imported")
+        os.makedirs(done_dir, exist_ok=True)
+        dest = os.path.join(done_dir, f)
+        if os.path.exists(dest):
+            dest = os.path.join(done_dir, f"{f[:-5]} {dt.datetime.now():%Y%m%d-%H%M%S}.json")
+        try:
+            os.replace(os.path.join(d, f), dest)
+        except OSError as e:
+            print(f"Could not move {f} to Imported: {e}", flush=True)
 
 
 def safe_name(name):
@@ -660,8 +668,6 @@ def drive_available():
 
 
 def drive_touch(pid):
-    if not DRIVE:
-        return
     t, seq = SYNC["dirty"].get(pid, (time.time(), 0))
     SYNC["dirty"][pid] = (t, seq + 1)
 
@@ -917,6 +923,7 @@ def drive_scan():
 def drive_sync(force=False):
     """Write pending deals (after FLUSH_AFTER seconds, or all with force), then read what others changed."""
     if not DRIVE:
+        SYNC["error"] = NO_DRIVE
         return
     with SYNC_RUN:
         if not drive_available():
@@ -941,8 +948,100 @@ def drive_sync(force=False):
 
 
 def drive_status():
-    return {"mode": "drive" if DRIVE else "local", "root": DRIVE, "user": ME, "available": SYNC["available"],
+    return {"root": DRIVE, "user": ME, "available": SYNC["available"],
             "pending": len(SYNC["dirty"]), "conflicts": sorted(SYNC["conflicts"]), "error": SYNC["error"], "lastSync": SYNC["lastSync"]}
+
+
+MAIL_TABLES = ("mail_messages", "mail_labels", "mail_allmail", "mail_threads")
+
+
+def migrate_to_drive(src, as_user, dry=False, with_mail=False):
+    """One-time move of a pre-drive data folder (deals.sqlite, documents/, import/) into the shared folder.
+    The source is only read (from a copy). Deals already on the drive are left alone, so it can be run again.
+    Old activity has no user and is credited to as_user. with_mail: also load this Mac's Gmail cache into its local index."""
+    import shutil
+    import tempfile
+    if not drive_available():
+        raise SystemExit(f"Shared folder not set up: {DRIVE or '(none)'} – run --init-drive first")
+    tmp = tempfile.mkdtemp(prefix="dealdesk-migrate-")
+    copy = os.path.join(tmp, "deals.sqlite")
+    s = sqlite3.connect(f"file:{os.path.join(src, 'deals.sqlite')}?mode=ro", uri=True)
+    d = sqlite3.connect(copy)
+    s.backup(d)
+    s.close()
+    d.row_factory = sqlite3.Row
+    with d:
+        d.executescript(SCHEMA)
+        migrate(d)
+    report = []
+    root = deals_dir()
+    os.makedirs(root, exist_ok=True)
+    for row in d.execute("SELECT id, name FROM projects ORDER BY name").fetchall():
+        pid = row["id"]
+        if not ID_OK.match(pid):
+            report.append(f"SKIPPED {row['name']}: id {pid!r} cannot be a folder name")
+            continue
+        have = [f for f in os.listdir(root) if f.endswith(f"({pid})") and os.path.isfile(os.path.join(root, f, "deal.json"))]
+        if have:
+            report.append(f"already on the drive: {have[0]}")
+            continue
+        deal = export_deal(d, pid)
+        versions = export_versions(d, pid)
+        acts = d.execute("SELECT * FROM activity WHERE project_id=? ORDER BY id", (pid,)).fetchall()
+        docs, names = [], set()
+        for r in d.execute("SELECT * FROM documents WHERE project_id=? ORDER BY id", (pid,)):
+            fp = os.path.join(src, "documents", pid, r["stored_name"])
+            if os.path.isfile(fp):
+                docs.append((fp, os.path.join(safe_name(re.sub(r"\s*/\s*", ", ", r["note"] or "Other")), safe_name(r["name"]))))
+                names.add(r["name"])
+        extra = os.path.join(src, "import", pid)  # documents that came with a draft but were never attached
+        for f in sorted(os.listdir(extra)) if os.path.isdir(extra) else []:
+            if f not in names and os.path.isfile(os.path.join(extra, f)) and not f.startswith("."):
+                docs.append((os.path.join(extra, f), safe_name(f)))
+        folder = os.path.join(root, folder_for(deal.get("name"), pid))
+        report.append(f"{'would move' if dry else 'moved'}: {os.path.basename(folder)} – {len(versions)} versions, {len(acts)} activity, "
+                      f"{len(docs)} documents{', decision log' if deal.get('judgement') else ''}")
+        if dry:
+            continue
+        os.makedirs(os.path.join(folder, "versions"), exist_ok=True)
+        for v in versions:
+            write_atomic(os.path.join(folder, "versions", f"{v['id']}.json"), dumps(v))
+        if acts:
+            os.makedirs(os.path.join(folder, "activity"), exist_ok=True)
+            lines = [json.dumps({"action": a["action"], "at": a["at"], "name": a["project_name"], "user": a["user"] or as_user}, ensure_ascii=False) for a in acts]
+            write_atomic(os.path.join(folder, "activity", f"{as_user}.jsonl"), "\n".join(lines) + "\n")
+        for fp, rel in docs:
+            dest = os.path.join(folder, "Documents", rel)
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            if not os.path.exists(dest):
+                shutil.copy2(fp, dest)
+        deal.update(id=pid, rev=1, schema=DEAL_SCHEMA, savedBy=as_user, savedAt=now())
+        write_atomic(os.path.join(folder, "deal.json"), dumps(deal))  # last: a folder without deal.json is unfinished and is redone
+    imp = os.path.join(src, "import")
+    done = os.path.join(DRIVE, "Inbox", "Imported")
+    os.makedirs(done, exist_ok=True)
+    n = 0
+    for f in sorted(os.listdir(imp)) if os.path.isdir(imp) else []:
+        if f.endswith(".json") and not os.path.exists(os.path.join(done, f)):
+            n += 1
+            if not dry:
+                shutil.copy2(os.path.join(imp, f), os.path.join(done, f))
+    report.append(f"{n} imported draft file(s) {'would be' if dry else ''} copied to Inbox/Imported")
+    if with_mail and not dry:
+        init_db()
+        con = connect()
+        with LOCK, con:
+            for t in MAIL_TABLES:
+                rows = d.execute(f"SELECT * FROM {t}").fetchall()
+                if rows:
+                    con.executemany(f"INSERT OR REPLACE INTO {t} ({', '.join(rows[0].keys())}) VALUES ({', '.join('?' * len(rows[0].keys()))})", [tuple(r) for r in rows])
+            for r in d.execute("SELECT key, value FROM meta WHERE key LIKE 'mail_%'"):
+                meta_set(con, r["key"], r["value"])
+        con.close()
+        report.append("Gmail cache loaded into this Mac's index")
+    d.close()
+    shutil.rmtree(tmp, ignore_errors=True)
+    return report
 
 
 def init_drive(root):
@@ -1594,7 +1693,9 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/mail/"):
             return self.mail_get(path, parse_qs(url.query))
         if path == "/api/projects":
-            auto_import()  # picks up files dropped into <data>/import while the app is running
+            if not DRIVE:
+                return self.send_json({"error": NO_DRIVE}, 503)
+            auto_import()  # picks up files dropped into the Inbox while the app is running
             drive_sync()
             SYNC["conflicts"].clear()  # the app reloads the drive's version, so editing can continue from it
             return self.send_json(all_projects())
@@ -1746,13 +1847,15 @@ class Handler(BaseHTTPRequestHandler):
         m = re.match(r"^/api/projects/([^/]+)$", path)
         if m:
             pid = m.group(1)
-            if len(pid) > 80 or (DRIVE and not ID_OK.match(pid)):
+            if not ID_OK.match(pid):
                 return self.send_json({"error": "bad id"}, 400)
             try:
                 p = self.body()
             except ValueError:
                 return self.send_json({"error": "bad json"}, 400)
-            if DRIVE and pid not in SYNC["conflicts"]:
+            if not DRIVE:
+                return self.send_json({"error": "Not saved – " + NO_DRIVE}, 503)
+            if pid not in SYNC["conflicts"]:
                 stale_save(pid, p.get("_base"))
             p.pop("_base", None)
             if pid in SYNC["conflicts"]:
@@ -1805,12 +1908,7 @@ class Handler(BaseHTTPRequestHandler):
                 con.execute("INSERT INTO activity (project_id, project_name, action, at, user) VALUES (?, ?, 'deleted', ?, ?)",
                             (pid, row["name"] if row else None, now(), ME))
             con.close()
-            drive_touch(pid)
-            # documents stay on disk (moved aside) so nothing is lost by accident
-            d = os.path.join(DOC_DIR, pid)
-            if not DRIVE and os.path.isdir(d):
-                os.makedirs(os.path.join(DOC_DIR, "_deleted"), exist_ok=True)
-                os.replace(d, os.path.join(DOC_DIR, "_deleted", f"{pid}_{dt.datetime.now():%Y%m%d%H%M%S}"))
+            drive_touch(pid)  # the next sync moves its folder to Deals/_deleted
             return self.send_json({"ok": True})
         m = re.match(r"^/api/versions/(\d+)$", path)
         if m:
@@ -1870,13 +1968,22 @@ def main():
     ap.add_argument("--import", dest="imp", metavar="JSON")
     ap.add_argument("--idle-exit", type=float, default=0, metavar="MIN", help="stop after MIN minutes with no open app window")
     ap.add_argument("--init-drive", metavar="FOLDER", help="set up FOLDER (e.g. a Google Shared Drive) as the shared deal folder, then exit")
+    ap.add_argument("--migrate-from", metavar="FOLDER", help="move the deals of a pre-drive data folder (with deals.sqlite) to the shared folder, then exit")
+    ap.add_argument("--as-user", default="Tautvydas", help="with --migrate-from: who old activity is credited to")
+    ap.add_argument("--dry-run", action="store_true", help="with --migrate-from: only report what would move")
+    ap.add_argument("--with-mail", action="store_true", help="with --migrate-from: also load that folder's Gmail cache into this Mac's index")
     a = ap.parse_args()
     if a.init_drive:
         print(f"Shared folder ready: {init_drive(a.init_drive)}\nSettings: {os.path.join(DATA, 'config.json')} – restart Deal Desk to use it.")
         return
+    if a.migrate_from:
+        print("\n".join(migrate_to_drive(os.path.expanduser(a.migrate_from), a.as_user, dry=a.dry_run, with_mail=a.with_mail)))
+        return
     init_db()
     if a.imp:
-        print(f"Imported {import_json(a.imp)} project(s) into {DB_PATH}")
+        n = import_json(a.imp)
+        drive_sync(force=True)
+        print(f"Imported {n} project(s) into {DRIVE}" + (f" – {SYNC['error']}" if SYNC["error"] else ""))
         return
     daily_backup()
     auto_import()
@@ -1888,9 +1995,9 @@ def main():
         if not a.no_browser:
             webbrowser.open(url)
         return
+    drive_sync(force=True)
+    print(f"Shared folder: {DRIVE or '(none)'} ({'found' if SYNC['available'] else 'NOT FOUND'}), user {ME}", flush=True)
     if DRIVE:
-        drive_sync(force=True)
-        print(f"Shared folder: {DRIVE} ({'found' if SYNC['available'] else 'NOT FOUND'}), user {ME}", flush=True)
 
         def sync_loop():
             while True:
@@ -1902,7 +2009,7 @@ def main():
                     print(SYNC["error"], flush=True)
         threading.Thread(target=sync_loop, daemon=True).start()
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))  # the launcher stops an older server with kill: write pending deals first
-    print(f"Deal Desk is running at {url}\nDatabase: {DB_PATH}\nClose this window (or press Ctrl+C) to stop.")
+    print(f"Deal Desk is running at {url}\nIndex: {DB_PATH}\nClose this window (or press Ctrl+C) to stop.")
     if not a.no_browser:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
     if a.idle_exit > 0:

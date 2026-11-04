@@ -13,11 +13,13 @@ const freePort = () => new Promise((res) => { const s = net.createServer(); s.li
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const put = (port, id, body) => new Promise((res, rej) => { const d = JSON.stringify(body); const q = http.request({ host: '127.0.0.1', port, path: `/api/projects/${id}`, method: 'PUT', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(d) } }, (r) => { r.resume(); r.on('end', res); }); q.on('error', rej); q.end(d); });
 // timestamps of saving (not of the model) are left out
-const tidy = (t) => t.replace(/Saved to deals\.sqlite|Saving…|Connecting…/g, '').replace(/(Created|Last change)\n[^\n]*/g, '$1');
+const tidy = (t) => t.replace(/Saved to deals\.sqlite|Saved to the shared folder|Saving…|Connecting…/g, '').replace(/(Created|Last change)\n[^\n]*/g, '$1');
 
 (async () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dealdesk-snap-')), port = await freePort();
-  const srv = spawn('python3', [path.join(ROOT, 'dist', 'server.py'), '--port', String(port), '--no-browser'], { env: Object.assign({}, process.env, { DEALDESK_DATA: tmp }), stdio: 'ignore' });
+  // always a temporary shared folder: never the real one on this Mac
+  const drive = path.join(tmp, 'drive'); fs.mkdirSync(drive); fs.writeFileSync(path.join(drive, '.deal-desk'), '{}');
+  const srv = spawn('python3', [path.join(ROOT, 'dist', 'server.py'), '--port', String(port), '--no-browser'], { env: Object.assign({}, process.env, { DEALDESK_DATA: tmp, DEALDESK_DRIVE: drive, DEALDESK_USER: 'test@example.com' }), stdio: 'ignore' });
   await sleep(1500);
   const ids = fs.readdirSync(DEALS).filter((f) => f.endsWith('.json')).map((f) => f.slice(0, -5)).sort();
   for (const id of ids) { const p = JSON.parse(fs.readFileSync(path.join(DEALS, id + '.json'), 'utf8')); p.name = p.name || id; await put(port, id, p); }
@@ -45,7 +47,7 @@ const tidy = (t) => t.replace(/Saved to deals\.sqlite|Saving…|Connecting…/g,
     S[`${id} / Excel export`] = wb.SheetNames.map((n) => `## ${n}\n${XLSX.utils.sheet_to_csv(wb.Sheets[n])}`).join('\n');
   }
   S.errors = errors.join('\n');
-  await browser.close(); srv.kill(); fs.rmSync(tmp, { recursive: true, force: true });
+  await browser.close(); srv.kill(); await new Promise((r) => srv.exitCode !== null ? r() : srv.on('exit', r)); fs.rmSync(tmp, { recursive: true, force: true }); // the server writes pending deals on exit
 
   if (process.argv.includes('--update')) { fs.mkdirSync(path.dirname(EXP), { recursive: true }); fs.writeFileSync(EXP, JSON.stringify(S, null, 1)); console.log(`recorded ${Object.keys(S).length} views in tests/expected/app.json`); return; }
   const exp = JSON.parse(fs.readFileSync(EXP, 'utf8')); let fails = 0;
