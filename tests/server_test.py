@@ -169,6 +169,13 @@ class ServerTest(unittest.TestCase):
     def test_05_backup_and_delete(self):
         self.project("t4", "To delete")
         self.assertTrue(self.call("POST", "/api/backup", {})["file"].endswith(".sqlite"))
+        # the old app's backups (deals_…) live in the same folder: daily pruning must never touch them
+        old = [os.path.join(self.data, "backups", f"deals_2026-10-{d:02d}_090000_daily.sqlite") for d in range(1, 32)]
+        for f in old:
+            open(f, "w").close()
+        subprocess.run([sys.executable, "-c", f"import sys; sys.path.insert(0, {os.path.dirname(SERVER)!r}); import server; server.daily_backup()"],
+                       env=dict(os.environ, DEALDESK_DATA=self.data, DEALDESK_DRIVE=self.drive), check=True)
+        self.assertTrue(all(os.path.exists(f) for f in old), "pre-drive backups are kept")
         self.call("DELETE", "/api/projects/t4")
         self.assertNotIn("t4", [p["id"] for p in self.call("GET", "/api/projects")])
 

@@ -509,7 +509,8 @@ def all_projects():
 def backup(tag="manual"):
     os.makedirs(BACKUP_DIR, exist_ok=True)
     stamp = dt.datetime.now().strftime("%Y-%m-%d_%H%M%S")
-    dest = os.path.join(BACKUP_DIR, f"deals_{stamp}_{tag}.sqlite")
+    # "index_": the old app's backups (deals_…) share this folder and must never be pruned by this one
+    dest = os.path.join(BACKUP_DIR, f"index_{stamp}_{tag}.sqlite")
     src = connect()
     dst = sqlite3.connect(dest)
     with dst:
@@ -524,10 +525,10 @@ def daily_backup():
         return
     os.makedirs(BACKUP_DIR, exist_ok=True)
     today = dt.date.today().isoformat()
-    if any(f.startswith(f"deals_{today}") and f.endswith("_daily.sqlite") for f in os.listdir(BACKUP_DIR)):
+    if any(f.startswith(f"index_{today}") and f.endswith("_daily.sqlite") for f in os.listdir(BACKUP_DIR)):
         return
     backup("daily")
-    daily = sorted(f for f in os.listdir(BACKUP_DIR) if f.endswith("_daily.sqlite"))
+    daily = sorted(f for f in os.listdir(BACKUP_DIR) if f.startswith("index_") and f.endswith("_daily.sqlite"))
     for f in daily[:-30]:
         try:
             os.remove(os.path.join(BACKUP_DIR, f))
