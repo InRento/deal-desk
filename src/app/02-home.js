@@ -1,4 +1,4 @@
-// Home: projects grouped by stage, portfolio tiles, Today view; pipeline stage, next action and open-item chasing.
+// Home: projects grouped by stage, stage counts, Today view; pipeline stage, next action and open-item chasing.
 const NO_ACTION_NEEDED = ['Rejected', 'Funded', 'Realised'];
 const CHASE_DAYS = 5;
 const chaseDue = (t) => !t.done && t.askedOn && wdBetween(t.askedOn, todayIso()) >= CHASE_DAYS;
@@ -65,24 +65,23 @@ function renderHome() {
   const q = (S.q || '').toLowerCase();
   const list = all.filter(({ p }) => !q || (p.name + ' ' + p.borrower + ' ' + p.country + ' ' + p.projectType + ' ' + (p.nextAction || '')).toLowerCase().includes(q));
   const row = ({ id, p, m: r, r: rr, cur: c }) => `<tr data-open="${id}" tabindex="0" class="${['missing', 'overdue'].includes(nextState(p)) ? 'needs' : ''}">
-    <td><b>${esc(p.name)}</b> ${lockBadge(id)}${mailBadge(id)}<div class="sub">${esc([p.borrower, p.projectType].filter(Boolean).join(' · '))}</div></td>
+    <td><b>${esc(p.name)}</b> ${lockBadge(id)}${mailBadge(id)}</td>
     <td><select class="stsel ${stCls(p.status)}" data-act="stage-sel" data-id="${id}" aria-label="Stage of ${esc(p.name)}" ${canEdit(id) ? '' : 'disabled title="Lock the deal to change its stage"'}>${STATUSES.map((s) => `<option ${s === p.status ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></td>
     <td class="nxtc">${nextCell(p)}</td>
     <td class="n">${r ? money(r.facility, c) : '–'}</td><td class="n">${r ? pctf(rr.rate, 2) : '–'}</td><td class="n">${r ? pctf(r.ltv0) : '–'}</td>
-    <td class="n">${r ? pctf(r.irr, 2) : '–'}</td>
     <td>${r ? (r.flags ? `<span class="pill chk">${r.flags} to check</span>` : '<span class="pill ok">OK</span>') : ''}</td>
     <td class="sub">${p.updatedAt ? new Date(p.updatedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : ''}</td></tr>`;
   const groups = STATUSES.map((s) => [s, list.filter((x) => x.p.status === s).sort((a, b) => String(a.p.nextDue || '9999').localeCompare(String(b.p.nextDue || '9999')) || String(b.p.updatedAt || '').localeCompare(String(a.p.updatedAt || '')))])
     .filter(([s, l]) => l.length);
-  const head = `<thead><tr><th>Project</th><th>Stage</th><th>Next action</th><th class="n">Loan</th><th class="n">Rate</th><th class="n">LTV</th><th class="n">IRR</th><th>Checks</th><th>Updated</th></tr></thead>`;
-  const table = `<div class="tblwrap"><table class="reg pipe">${head}${groups.map(([s, l]) => `<tbody><tr class="grp"><th colspan="9"><span class="pill ${stCls(s)}">${esc(s)}</span> <span class="sub">${l.length}</span></th></tr>${l.map(row).join('') || '<tr class="empty-row"><td colspan="9" class="sub">None</td></tr>'}</tbody>`).join('')}</table></div>`;
+  const head = `<thead><tr><th>Project</th><th>Stage</th><th>Next action</th><th class="n">Loan</th><th class="n">Rate</th><th class="n">LTV</th><th>Checks</th><th>Updated</th></tr></thead>`;
+  const table = `<div class="tblwrap"><table class="reg pipe">${head}${groups.map(([s, l]) => `<tbody><tr class="grp"><th colspan="8"><span class="pill ${stCls(s)}">${esc(s)}</span> <span class="sub">${l.length}</span></th></tr>${l.map(row).join('') || '<tr class="empty-row"><td colspan="8" class="sub">None</td></tr>'}</tbody>`).join('')}</table></div>`;
   const toggle = `<div class="seg" role="tablist"><button class="segb" data-act="home-view" data-v="pipeline" aria-pressed="${S.homeView === 'pipeline'}">Pipeline</button><button class="segb" data-act="home-view" data-v="today" aria-pressed="${S.homeView === 'today'}">Today${todayCount() ? ` <span class="cnt">${todayCount()}</span>` : ''}</button><button class="segb" data-act="home-view" data-v="decisions" aria-pressed="${S.homeView === 'decisions'}">Decisions</button></div>`;
   const mailBar = `<span class="mailbar">${MS.settings && MS.settings.address ? `<span class="sub">${MS.busy ? 'Checking Gmail…' : MS.ov && MS.ov.lastRefresh ? 'Gmail checked ' + dtime(MS.ov.lastRefresh) : 'Gmail not checked yet'}</span>${MS.ov && MS.ov.lastError ? ` <span class="bad-t" title="${esc(MS.ov.lastError)}">· error</span>` : ''} <button class="btn sm" data-act="mail-refresh" title="Check Gmail now" ${MS.busy ? 'disabled' : ''}>↻</button>` : ''}<button class="btn sm ghost" data-act="mail-settings">✉ Email settings</button></span>`;
   const body = S.store === 'offline' ? (S.storeErr ? `<div class="card empty"><h2>Shared folder not found</h2><div>${esc(S.storeErr)}</div></div>` : `<div class="card empty"><h2>Deal Desk server is not running</h2><div>Click the Deal Desk icon in the Dock, then reload this page.</div></div>`)
     : !total ? (S.store === 'connecting' ? `<div class="empty">Loading your projects…</div>` : `<div class="card empty"><h2>No projects yet</h2><div>Create a project, fill in the inputs, and the model, cash flow and sensitivity build themselves.</div><button class="btn primary" data-act="new">New project</button></div>`)
     : S.homeView === 'today' ? `<div class="filters">${toggle}${mailBar}</div>${todayView()}`
     : S.homeView === 'decisions' ? `<div class="filters">${toggle}</div>${decisionsView()}`
-    : `${portfolio(all)}<div class="filters">${toggle}<input class="search" id="q" type="search" placeholder="Search name, borrower, next action" aria-label="Search projects" value="${esc(S.q)}">${mailBar}</div>${table}`;
+    : `${stageCounts(all)}<div class="filters">${toggle}<input class="search" id="q" type="search" placeholder="Search name, borrower, next action" aria-label="Search projects" value="${esc(S.q)}">${mailBar}</div>${table}`;
   document.getElementById('app').innerHTML = topBar() + `<main class="wrap">
     <div class="home-head"><div class="t"><h1>Projects</h1><div class="sub">${S.info && S.info.storage ? `Shared folder: ${esc(S.info.storage.root.split('/').slice(-2).join(' / '))} on Google Drive · you are ${esc(S.info.storage.user)}${S.info.storage.error ? ` · <span class="bad-t">${esc(S.info.storage.error)}</span>` : ''}` : ''}</div></div>
     <div class="row"><button class="btn" data-act="backup-db" title="Copy deals.sqlite into the backups folder">Back up database</button><button class="btn" data-act="backup">Export all (JSON)</button><label class="btn" for="importf">Import</label><input id="importf" type="file" accept=".json,application/json" hidden></div></div>
@@ -146,24 +145,8 @@ function homeRows() {
     return { id, p, m: res ? res.summary : null, r: res ? res.r : null, cur: p.inputs.currency || 'EUR' };
   });
 }
-function portfolio(all) {
-  const act = all.filter((x) => x.m && ACTIVE.includes(x.p.status));
-  if (!act.length) return '';
-  const byCur = {};
-  for (const x of act) { const c = x.cur; (byCur[c] = byCur[c] || { n: 0, loan: 0, w: 0, wl: 0, wr: 0 }); const b = byCur[c]; b.n++; b.loan += x.m.facility; if (x.m.ltv0 != null) { b.w += x.m.facility; b.wl += x.m.ltv0 * x.m.facility; } b.wr += x.r.rate * x.m.facility; }
-  const byStatus = ACTIVE.map((s) => { const l = act.filter((x) => x.p.status === s); return { s, n: l.length, byC: l.reduce((o, x) => ((o[x.cur] = (o[x.cur] || 0) + x.m.facility), o), {}) }; }).filter((x) => x.n);
-  const maxStatus = Math.max(1, ...byStatus.map((b) => Object.values(b.byC).reduce((a, v) => a + v, 0)));
-  const today = E.parseDate(new Date().toISOString().slice(0, 10)); const in12 = E.edate(today, 12);
-  const mat = all.filter((x) => x.m && ['Turned in', 'Funded'].includes(x.p.status) && x.m.maturity <= in12).sort((a, b) => a.m.maturity - b.m.maturity);
-  const flagged = act.filter((x) => x.m.flags > 0).length;
-  const countries = {}; for (const x of act) countries[x.p.country || 'not set'] = (countries[x.p.country || 'not set'] || 0) + 1;
-  const curRows = Object.entries(byCur).map(([c, b]) => `<div class="tile"><div class="l">Active volume · ${esc(c)}</div><div class="v" title="${money(b.loan, c)}">${sym(c)}${compact(b.loan)}</div><div class="s">${b.n} deal${b.n > 1 ? 's' : ''} · w. rate ${pctf(b.wr / b.loan, 2)} · w. LTV ${b.w ? pctf(b.wl / b.w) : '–'}</div></div>`).join('');
-  return `<section class="card" style="margin-bottom:16px" aria-label="Portfolio overview"><div class="row" style="justify-content:space-between;margin-bottom:10px"><h2>Portfolio</h2><span class="sub">New deal to Funded · full facilities</span></div>
-    <div class="tiles">${curRows}
-      <div class="tile"><div class="l">Deals with flags</div><div class="v ${flagged ? 'bad' : 'good'}">${flagged} / ${act.length}</div><div class="s">checks to resolve</div></div>
-      <div class="tile"><div class="l">Countries</div><div class="v" style="font-size:15px">${Object.entries(countries).map(([c, n]) => `${esc(c)} ${n}`).join(' · ')}</div><div class="s">active deals</div></div></div>
-    <div class="cols" style="margin-top:14px"><div><h3 style="margin-bottom:8px">Pipeline by status</h3>${byStatus.map((b) => { const tot = Object.values(b.byC).reduce((a, v) => a + v, 0); return `<div class="pbar"><span class="pl">${esc(b.s)} <span class="sub">${b.n}</span></span><span class="pt"><i style="width:${(tot / maxStatus * 100).toFixed(1)}%"></i></span><span class="pv">${Object.entries(b.byC).map(([c, v]) => sym(c) + compact(v)).join(' + ')}</span></div>`; }).join('')}</div>
-    <div><h3 style="margin-bottom:8px">Maturities in the next 12 months <span class="sub">· turned in and funded</span></h3>${mat.length ? `<div class="tblwrap"><table><tbody>${mat.map((x) => `<tr data-open="${x.id}" tabindex="0" class="click"><td>${esc(x.p.name)}</td><td class="n">${datef(x.m.maturity)}</td><td class="n">${money(x.m.facility, x.cur)}</td><td>${x.m.cashAtMaturity < 0 ? '<span class="pill chk">exit not covered</span>' : '<span class="pill ok">covered</span>'}</td></tr>`).join('')}</tbody></table></div>` : '<div class="sub">None.</div>'}</div></div></section>`;
+function stageCounts(all) { // number of projects in each stage, above the list
+  return `<section class="stagecounts" aria-label="Projects by stage">${STATUSES.map((s) => { const n = all.filter((x) => x.p.status === s).length; return `<div class="sc ${n ? '' : 'zero'}"><span class="pill ${stCls(s)}">${esc(s)}</span><b>${n}</b></div>`; }).join('')}</section>`;
 }
 function newProject(fromId) {
   const id = uid();
