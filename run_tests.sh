@@ -3,6 +3,7 @@
 #  - engine guard: confirmed figures (Skýra, Ustroń, Noa, M23 vs the analysts' models) + every result of every test deal unchanged
 #  - trace test: every "how it is calculated" explanation reproduces the number on screen
 #  - server tests: storage, import folder, backups, origin guard, Gmail read-only, password never on disk
+#  - drive tests: two servers on one shared folder (saves, stale copies, rev conflicts, versions, inbox, drive missing)
 #  - with Playwright: app guard (every tab, deck and Excel export unchanged) and the browser flow test
 cd "$(dirname "$0")"
 fail=0; LOG="$(mktemp)"
@@ -14,6 +15,7 @@ run() { # run <name> <command…>: show failures and the last line, remember the
 if command -v node >/dev/null 2>&1; then run "Engine guard" node tests/engine_test.js; run "Trace test" node tests/trace_test.js
 else echo "node not installed – engine guard cannot run (brew install node)"; fail=1; fi
 run "Server tests" python3 tests/server_test.py
+run "Drive tests" python3 -W ignore tests/drive_test.py
 if command -v node >/dev/null 2>&1 && node -e "require('playwright')" >/dev/null 2>&1; then
   run "App guard" node tests/app_snapshot.js
   run "Browser test" node tests/ui_test.js

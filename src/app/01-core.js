@@ -116,7 +116,7 @@ async function api(method, path, body, raw) {
 async function initStore() {
   try {
     const list = await api('GET', '/api/projects');
-    S.projects = {}; for (const p of list) S.projects[p.id] = normalise(p);
+    S.projects = {}; S.base = {}; for (const p of list) { S.base[p.id] = p._base; delete p._base; S.projects[p.id] = normalise(p); }
     S.store = 'sqlite'; S.loaded = true;
     try { S.info = await api('GET', '/api/info'); } catch {}
   } catch (e) { S.store = 'offline'; }
@@ -141,14 +141,14 @@ function metricsOf(p, res) {
 function saveNow(id) {
   const p = S.projects[id]; if (!p) return;
   p.updatedAt = new Date().toISOString();
-  const body = clone(p); delete body._new; delete body.id; body.metrics = metricsOf(p);
+  const body = clone(p); delete body._new; delete body.id; body.metrics = metricsOf(p); body._base = (S.base || {})[id];
   const ver = S.ver[id] || 0;
   if (S.store !== 'sqlite') { S.saveErr = 'Not saved – Deal Desk server is not running'; renderSaveState(); return; }
   S.saving++; renderSaveState();
   chains[id] = (chains[id] || Promise.resolve()).then(() => api('PUT', '/api/projects/' + encodeURIComponent(id), body)).then(() => {
     delete p._new; S.saveErr = null;
     if ((S.ver[id] || 0) === ver) S.dirty.delete(id);
-  }).catch(() => { S.saveErr = 'Save failed – is the Deal Desk window still open?'; }).finally(() => { S.saving--; renderSaveState(); })
+  }).catch((e) => { S.saveErr = /^Not saved/.test(e.message) ? e.message : 'Save failed – is the Deal Desk window still open?'; }).finally(() => { S.saving--; renderSaveState(); })
     .then(() => vSyncActive(id)); // the open version follows every save
   return chains[id];
 }

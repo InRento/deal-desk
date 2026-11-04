@@ -12,13 +12,17 @@ longer shown or added. Standard library only: no pip installs needed.
 """
 import argparse
 import datetime as dt
+import getpass
 import json
 import mimetypes
 import os
+import random
 import re
+import signal
 import sqlite3
 import sys
 import threading
+import time
 import uuid
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -35,6 +39,27 @@ STATIC = {"/": ("index.html", "text/html; charset=utf-8"),
           "/jspdf.umd.min.js": ("jspdf.umd.min.js", "application/javascript"),
           "/html2canvas.min.js": ("html2canvas.min.js", "application/javascript")}
 SCHEMA_VERSION = 2
+
+
+def load_config():
+    """Shared folder (Google Drive) settings: env vars win over <data>/config.json; no drive root = local mode."""
+    cfg = {}
+    try:
+        with open(os.path.join(DATA, "config.json"), encoding="utf-8") as fh:
+            cfg = json.load(fh)
+    except (OSError, ValueError):
+        pass
+    root = os.environ.get("DEALDESK_DRIVE") or cfg.get("driveRoot") or ""
+    m = re.search(r"GoogleDrive-([^/]+@[^/]+)", root)
+    user = os.environ.get("DEALDESK_USER") or cfg.get("user") or (m.group(1) if m else getpass.getuser())
+    return {"driveRoot": root, "user": user}
+
+
+CONFIG = load_config()
+DRIVE = CONFIG["driveRoot"]
+ME = CONFIG["user"]
+if DRIVE:  # the local database is only an index of the drive files; deals.sqlite stays untouched as the pre-drive copy
+    DB_PATH = os.path.join(DATA, "drive-index.sqlite")
 APP_VERSION = "3.18.0"  # bump when the program changes; the launcher restarts an older running server
 
 # ---------------------------------------------------------------------------
@@ -284,6 +309,7 @@ def migrate(con):
     want = {"project_inputs": [(c, coltype(t)) for _, c, t in INPUT_FIELDS],
             "projects": [(c, coltype(t).replace(" NOT NULL", "")) for _, c, t in PROJECT_FIELDS],
             "versions": [("parent_id", "INTEGER"), ("updated_at", "TEXT")],
+            "activity": [("user", "TEXT")],
             "metrics": [(c, "TEXT" if c.endswith("_date") else "REAL") for _, c in METRIC_FIELDS]}
     for t, f, _ in CHILDREN:
         want[t] = [(c, coltype(ty)) for _, c, ty in f]
@@ -385,7 +411,7 @@ def from_db(v, typ):
     return str(v)
 
 
-def save_project(con, pid, p):
+def save_project(con, pid, p, from_drive=False):
     p["status"] = map_stage(p.get("status"))
     pr = [to_db(p.get(k), t) for k, _, t in PROJECT_FIELDS]
     pr[0] = pr[0] or "Untitled project"
@@ -414,12 +440,15 @@ def save_project(con, pid, p):
         mc = [c for _, c in METRIC_FIELDS]
         con.execute(f"INSERT OR REPLACE INTO metrics (project_id, {', '.join(mc)}, computed_at) VALUES (?{', ?' * len(mc)}, ?)",
                     [pid] + [m.get(k) if not isinstance(m.get(k), (dict, list)) else None for k, _ in METRIC_FIELDS] + [now()])
-    last = con.execute("SELECT action, at FROM activity WHERE project_id=? ORDER BY id DESC LIMIT 1", (pid,)).fetchone()
+    if from_drive:
+        return
+    drive_touch(pid)
+    last = con.execute("SELECT action, at FROM activity WHERE project_id=? AND (user IS NULL OR user=?) ORDER BY id DESC LIMIT 1", (pid, ME)).fetchone()
     recent = last is not None and last["action"] in ("updated", "created") and \
         (dt.datetime.now(dt.timezone.utc) - dt.datetime.fromisoformat(last["at"])).total_seconds() < 600
     if not exists or not recent:
-        con.execute("INSERT INTO activity (project_id, project_name, action, at) VALUES (?, ?, ?, ?)",
-                    (pid, pr[0], "updated" if exists else "created", now()))
+        con.execute("INSERT INTO activity (project_id, project_name, action, at, user) VALUES (?, ?, ?, ?, ?)",
+                    (pid, pr[0], "updated" if exists else "created", now(), ME))
 
 
 def load_project(con, row):
@@ -457,7 +486,11 @@ def load_project(con, row):
 def all_projects():
     con = connect()
     try:
-        return [load_project(con, r) for r in con.execute("SELECT * FROM projects ORDER BY updated_at DESC")]
+        out = [load_project(con, r) for r in con.execute("SELECT * FROM projects ORDER BY updated_at DESC")]
+        if DRIVE:  # the drive rev the app's copy starts from; a save based on an older one would undo someone's change
+            for p in out:
+                p["_base"] = int(meta_get(con, f"extrev:{p['id']}") or 0)
+        return out
     finally:
         con.close()
 
@@ -505,12 +538,14 @@ def import_json(path, skip_existing=False):
             exists = con.execute("SELECT 1 FROM projects WHERE id=?", (pid,)).fetchone()
             if exists and p.get("_appendVersions"):  # add versions to an existing project without touching its inputs
                 for v in p.get("_versions") or []:
-                    con.execute("INSERT INTO versions (project_id, label, created_at, data, metrics, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-                                (pid, v.get("label") or "Version", now(), json.dumps(v.get("data") or {}), json.dumps(v.get("metrics")), now()))
+                    con.execute("INSERT INTO versions (id, project_id, label, created_at, data, metrics, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                                (new_version_id(), pid, v.get("label") or "Version", now(), json.dumps(v.get("data") or {}), json.dumps(v.get("metrics")), now()))
+                drive_touch(pid)
                 n += 1
                 continue
             if exists and p.get("_appendEmails"):  # add email material without touching the model inputs
                 append_emails(con, pid, p)
+                drive_touch(pid)
                 n += 1
                 continue
             if skip_existing and not p.get("_replace") and exists:
@@ -519,8 +554,8 @@ def import_json(path, skip_existing=False):
             p.setdefault("updatedAt", now())
             save_project(con, pid, p)
             for v in p.get("_versions") or []:
-                con.execute("INSERT INTO versions (project_id, label, created_at, data, metrics) VALUES (?, ?, ?, ?, ?)",
-                            (pid, v.get("label") or "Version", now(), json.dumps(v.get("data") or {}), json.dumps(v.get("metrics"))))
+                con.execute("INSERT INTO versions (id, project_id, label, created_at, data, metrics) VALUES (?, ?, ?, ?, ?, ?)",
+                            (new_version_id(), pid, v.get("label") or "Version", now(), json.dumps(v.get("data") or {}), json.dumps(v.get("metrics"))))
             n += 1
     con.close()
     return n
@@ -558,9 +593,10 @@ def append_emails(con, pid, p):
 
 
 def auto_import():
-    """Import each JSON file dropped in <data>/import once (projects whose id already exists are left alone)."""
-    d = os.path.join(DATA, "import")
-    if not os.path.isdir(d):
+    """Import each JSON file dropped in <data>/import (drive mode: <drive>/Inbox) once (projects whose id already exists
+    are left alone). On the drive an imported file moves to Inbox/Imported, so every Mac sees it as done."""
+    d = os.path.join(DRIVE, "Inbox") if DRIVE else os.path.join(DATA, "import")
+    if not os.path.isdir(d) or (DRIVE and not drive_available()):
         return
     con = connect()
     done = {r["key"] for r in con.execute("SELECT key FROM meta WHERE key LIKE 'imported:%'")}
@@ -578,12 +614,350 @@ def auto_import():
         with con:
             con.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)", (f"imported:{f}", now()))
         con.close()
+        if DRIVE:
+            done_dir = os.path.join(d, "Imported")
+            os.makedirs(done_dir, exist_ok=True)
+            dest = os.path.join(done_dir, f)
+            if os.path.exists(dest):
+                dest = os.path.join(done_dir, f"{f[:-5]} {dt.datetime.now():%Y%m%d-%H%M%S}.json")
+            try:
+                os.replace(os.path.join(d, f), dest)
+            except OSError as e:
+                print(f"Could not move {f} to Imported: {e}", flush=True)
 
 
 def safe_name(name):
     name = os.path.basename(name or "file").strip().replace("\x00", "")
     name = re.sub(r"[^\w.\- ()&+,]", "_", name)[:150]
     return name or "file"
+
+
+# ---------------------------------------------------------------------------
+# Shared folder (Google Drive for Desktop). Each deal lives in <drive>/Deals/<name> (<id>)/ as deal.json,
+# versions/<id>.json and activity/<user>.jsonl; the local SQLite database is only an index of those files plus this
+# user's Gmail cache. SQLite itself never goes on the drive: Drive cannot merge it and two Macs writing corrupt it.
+# Writes are temp file + rename (Drive keeps it as the same file, with its version history). Every deal.json carries
+# a rev; a Mac only writes over the rev it last read, otherwise its copy is set aside as a conflict file.
+# ---------------------------------------------------------------------------
+DRIVE_MARK = ".deal-desk"   # marks the real root: without it (drive not mounted, wrong folder) nothing is read or removed
+DEAL_SCHEMA = 1
+FLUSH_AFTER = float(os.environ.get("DEALDESK_FLUSH_SECONDS", "5"))  # batches typing into one drive write
+SYNC_EVERY = float(os.environ.get("DEALDESK_SYNC_SECONDS", "3"))
+SYNC = {"dirty": {}, "conflicts": {}, "seen": {}, "available": False, "error": "", "lastSync": None}
+SYNC_RUN = threading.Lock()   # one sync pass at a time
+ID_OK = re.compile(r"^[A-Za-z0-9._-]{1,80}$")
+
+
+def new_version_id():
+    # unique across Macs and still an integer, so the app's version ids and routes stay as they are
+    return int(time.time() * 1000) * 1000 + random.randrange(1000)
+
+
+def drive_available():
+    ok = bool(DRIVE) and os.path.isfile(os.path.join(DRIVE, DRIVE_MARK))
+    SYNC["available"] = ok
+    return ok
+
+
+def drive_touch(pid):
+    if not DRIVE:
+        return
+    t, seq = SYNC["dirty"].get(pid, (time.time(), 0))
+    SYNC["dirty"][pid] = (t, seq + 1)
+
+
+def deals_dir():
+    return os.path.join(DRIVE, "Deals")
+
+
+def folder_for(name, pid):
+    base = re.sub(r"[^\w\- ,&+.]", " ", name or "Untitled project")
+    base = re.sub(r"\s+", " ", base).strip(" .")[:60] or "Untitled project"
+    return f"{base} ({pid})"
+
+
+def read_json(path):
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return None
+
+
+def write_atomic(path, text):
+    tmp = os.path.join(os.path.dirname(path), f".{os.path.basename(path)}.{re.sub(r'[^\w.-]', '_', ME)}.tmp")
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write(text)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, path)
+
+
+def dumps(obj):
+    return json.dumps(obj, ensure_ascii=False, indent=1) + "\n"
+
+
+def export_deal(con, pid):
+    row = con.execute("SELECT * FROM projects WHERE id=?", (pid,)).fetchone()
+    if not row:
+        return None
+    p = load_project(con, row)
+    m = con.execute("SELECT * FROM metrics WHERE project_id=?", (pid,)).fetchone()
+    p["metrics"] = {k: m[c] for k, c in METRIC_FIELDS} if m else None
+    p["emailSummaries"] = [{"text": r["text"], "date": r["date"], "createdAt": r["created_at"]}
+                           for r in con.execute("SELECT * FROM mail_summaries WHERE project_id=? ORDER BY id", (pid,))]
+    return p
+
+
+def export_versions(con, pid):
+    return [{"id": r["id"], "label": r["label"], "createdAt": r["created_at"], "updatedAt": r["updated_at"], "parentId": r["parent_id"],
+             "data": json.loads(r["data"]), "metrics": json.loads(r["metrics"] or "null")}
+            for r in con.execute("SELECT * FROM versions WHERE project_id=? ORDER BY id", (pid,))]
+
+
+def drive_flush(pid):
+    """Write one deal from the index to the drive, unless someone else saved it since we last read it."""
+    con = connect()
+    try:
+        deal = export_deal(con, pid)
+        versions = export_versions(con, pid) if deal else []
+        folder = meta_get(con, f"folder:{pid}")
+        base = int(meta_get(con, f"rev:{pid}") or 0)
+        last_act = int(meta_get(con, f"act:{pid}") or 0)
+        acts = con.execute("SELECT * FROM activity WHERE project_id=? AND id>? AND (user IS NULL OR user=?) ORDER BY id",
+                           (pid, last_act, ME)).fetchall()
+    finally:
+        con.close()
+    if deal is None:
+        return drive_remove(pid, folder, acts)
+    folder = folder or folder_for(deal.get("name"), pid)
+    d = os.path.join(deals_dir(), folder)
+    disk = read_json(os.path.join(d, "deal.json"))
+    if disk is not None and int(disk.get("rev") or 0) != base:
+        return drive_conflict(pid, d, deal, disk)
+    os.makedirs(os.path.join(d, "versions"), exist_ok=True)
+    keep = set()
+    for v in versions:
+        fn = os.path.join(d, "versions", f"{v['id']}.json")
+        keep.add(f"{v['id']}.json")
+        text = dumps(v)
+        try:
+            with open(fn, encoding="utf-8") as fh:
+                if fh.read() == text:
+                    continue
+        except OSError:
+            pass
+        write_atomic(fn, text)
+    # rev matched, so every version file we did not keep is one this Mac deleted
+    for f in os.listdir(os.path.join(d, "versions")):
+        if f.endswith(".json") and f not in keep:
+            os.remove(os.path.join(d, "versions", f))
+    if acts:
+        os.makedirs(os.path.join(d, "activity"), exist_ok=True)
+        with open(os.path.join(d, "activity", f"{ME}.jsonl"), "a", encoding="utf-8") as fh:
+            for a in acts:
+                fh.write(json.dumps({"action": a["action"], "at": a["at"], "name": a["project_name"], "user": a["user"] or ME}, ensure_ascii=False) + "\n")
+    deal.update(id=pid, rev=base + 1, schema=DEAL_SCHEMA, savedBy=ME, savedAt=now())
+    fn = os.path.join(d, "deal.json")
+    write_atomic(fn, dumps(deal))
+    st = os.stat(fn)
+    SYNC["seen"][folder] = ((st.st_mtime_ns, st.st_size), pid)
+    con = connect()
+    with LOCK, con:
+        meta_set(con, f"rev:{pid}", str(base + 1))
+        meta_set(con, f"folder:{pid}", folder)
+        if acts:
+            meta_set(con, f"act:{pid}", str(acts[-1]["id"]))
+    con.close()
+
+
+def drive_remove(pid, folder, acts):
+    """A deleted deal's folder moves to Deals/_deleted on the drive; nothing is erased."""
+    if folder and os.path.isdir(os.path.join(deals_dir(), folder)):
+        gone = os.path.join(deals_dir(), "_deleted")
+        os.makedirs(gone, exist_ok=True)
+        dest = os.path.join(gone, f"{folder} {dt.datetime.now():%Y%m%d-%H%M%S}")
+        os.replace(os.path.join(deals_dir(), folder), dest)
+        os.makedirs(os.path.join(dest, "activity"), exist_ok=True)
+        with open(os.path.join(dest, "activity", f"{ME}.jsonl"), "a", encoding="utf-8") as fh:
+            for a in acts:
+                fh.write(json.dumps({"action": a["action"], "at": a["at"], "name": a["project_name"], "user": a["user"] or ME}, ensure_ascii=False) + "\n")
+        SYNC["seen"].pop(folder, None)
+    con = connect()
+    with LOCK, con:
+        con.execute("DELETE FROM meta WHERE key IN (?, ?, ?, ?, ?)", (f"rev:{pid}", f"folder:{pid}", f"act:{pid}", f"extrev:{pid}", f"extby:{pid}"))
+    con.close()
+
+
+def drive_conflict(pid, d, mine, disk):
+    """Someone else saved this deal since we read it: keep their version, set ours aside next to it, refuse further
+    saves until the app reloads. Locks (phase 2) make this rare; it is the backstop, never a silent overwrite."""
+    stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+    fn = os.path.join(d, f"deal.conflict-{re.sub(r'[^\w.@-]', '_', ME)}-{stamp}.json")
+    mine.update(id=pid, conflictWith=disk.get("rev"), savedBy=ME, savedAt=now())
+    write_atomic(fn, dumps(mine))
+    SYNC["conflicts"][pid] = {"file": fn, "by": disk.get("savedBy") or "someone else", "at": disk.get("savedAt"), "name": disk.get("name") or pid}
+    print(f"Conflict on {pid}: {disk.get('savedBy')} saved rev {disk.get('rev')}; ours kept in {fn}", flush=True)
+    load_deal(pid, os.path.basename(d), disk)
+
+
+def conflict_message(pid):
+    c = SYNC["conflicts"][pid]
+    return (f"Not saved – {c['by']} saved {c['name']} on Google Drive at {(c['at'] or '')[11:16]} while you were editing. "
+            f"Your version is kept in {os.path.basename(c['file'])} in the deal's folder. Reload the page to continue.")
+
+
+def load_deal(pid, folder, data):
+    """Replace one deal in the index with what is on the drive (deal.json, versions, everyone's activity)."""
+    d = os.path.join(deals_dir(), folder)
+    versions = []
+    vd = os.path.join(d, "versions")
+    for f in sorted(os.listdir(vd)) if os.path.isdir(vd) else []:
+        v = read_json(os.path.join(vd, f)) if f.endswith(".json") else None
+        if isinstance(v, dict) and "id" in v:
+            versions.append(v)
+    acts = []
+    ad = os.path.join(d, "activity")
+    for f in sorted(os.listdir(ad)) if os.path.isdir(ad) else []:
+        if not f.endswith(".jsonl"):
+            continue
+        with open(os.path.join(ad, f), encoding="utf-8") as fh:
+            for line in fh:
+                try:
+                    acts.append(json.loads(line))
+                except ValueError:
+                    pass  # a half-synced last line; it is complete on the next pass
+    acts.sort(key=lambda a: a.get("at") or "")
+    con = connect()
+    with LOCK, con:
+        save_project(con, pid, dict(data), from_drive=True)
+        con.execute("DELETE FROM mail_summaries WHERE project_id=?", (pid,))
+        for sm in data.get("emailSummaries") or []:
+            con.execute("INSERT INTO mail_summaries (project_id, text, date, created_at) VALUES (?, ?, ?, ?)",
+                        (pid, sm.get("text") or "", sm.get("date"), sm.get("createdAt") or now()))
+        con.execute("DELETE FROM versions WHERE project_id=?", (pid,))
+        for v in versions:
+            con.execute("INSERT INTO versions (id, project_id, label, created_at, data, metrics, parent_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        (int(v["id"]), pid, v.get("label") or "Version", v.get("createdAt") or now(), json.dumps(v.get("data") or {}),
+                         json.dumps(v.get("metrics")), v.get("parentId"), v.get("updatedAt")))
+        con.execute("DELETE FROM activity WHERE project_id=?", (pid,))
+        for a in acts:
+            con.execute("INSERT INTO activity (project_id, project_name, action, at, user) VALUES (?, ?, ?, ?, ?)",
+                        (pid, a.get("name"), a.get("action") or "updated", a.get("at") or now(), a.get("user")))
+        top = con.execute("SELECT COALESCE(MAX(id), 0) FROM activity WHERE project_id=?", (pid,)).fetchone()[0]
+        meta_set(con, f"act:{pid}", str(top))
+        meta_set(con, f"rev:{pid}", str(int(data.get("rev") or 0)))
+        meta_set(con, f"extrev:{pid}", str(int(data.get("rev") or 0)))
+        meta_set(con, f"extby:{pid}", f"{data.get('savedBy') or ''}|{data.get('savedAt') or ''}")
+        meta_set(con, f"folder:{pid}", folder)
+    con.close()
+
+
+def stale_save(pid, base):
+    """A save from an app copy older than the last change that arrived from the drive: kept as a conflict file, not saved."""
+    con = connect()
+    try:
+        ext = int(meta_get(con, f"extrev:{pid}") or 0)
+        by, _, at = (meta_get(con, f"extby:{pid}") or "|").partition("|")
+        folder = meta_get(con, f"folder:{pid}")
+        name = (con.execute("SELECT name FROM projects WHERE id=?", (pid,)).fetchone() or {"name": pid})["name"]
+    finally:
+        con.close()
+    if int(base or 0) >= ext or not folder:
+        return False
+    stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+    fn = os.path.join(deals_dir(), folder, f"deal.conflict-{re.sub(r'[^\w.@-]', '_', ME)}-{stamp}.json")
+    SYNC["conflicts"][pid] = {"file": fn, "by": by or "someone else", "at": at, "name": name}
+    return True
+
+
+def drive_scan():
+    """Bring deals changed on the drive into the index and drop deals whose folder is gone."""
+    root = deals_dir()
+    os.makedirs(root, exist_ok=True)
+    for folder in os.listdir(root):
+        if folder.startswith((".", "_")):
+            continue
+        fn = os.path.join(root, folder, "deal.json")
+        try:
+            st = os.stat(fn)
+        except OSError:
+            continue
+        key = (st.st_mtime_ns, st.st_size)
+        known = SYNC["seen"].get(folder)
+        if known and known[0] == key:
+            continue
+        data = read_json(fn)
+        if not isinstance(data, dict) or not ID_OK.match(str(data.get("id") or "")):
+            continue
+        pid = data["id"]
+        if pid in SYNC["dirty"]:
+            continue  # our pending write goes first; its rev check catches a change made meanwhile
+        con = connect()
+        mine = int(meta_get(con, f"rev:{pid}") or -1)
+        con.close()
+        if mine != int(data.get("rev") or 0) or not known:
+            load_deal(pid, folder, data)
+        SYNC["seen"][folder] = (key, pid)
+    con = connect()
+    gone = [r["key"][7:] for r in con.execute("SELECT key, value FROM meta WHERE key LIKE 'folder:%'")
+            if not os.path.isdir(os.path.join(root, r["value"]))]
+    con.close()
+    for pid in gone:
+        if pid in SYNC["dirty"]:
+            continue
+        con = connect()
+        with LOCK, con:
+            con.execute("DELETE FROM projects WHERE id=?", (pid,))
+            con.execute("DELETE FROM meta WHERE key IN (?, ?, ?, ?, ?)", (f"rev:{pid}", f"folder:{pid}", f"act:{pid}", f"extrev:{pid}", f"extby:{pid}"))
+        con.close()
+        print(f"{pid} was removed from the drive", flush=True)
+
+
+def drive_sync(force=False):
+    """Write pending deals (after FLUSH_AFTER seconds, or all with force), then read what others changed."""
+    if not DRIVE:
+        return
+    with SYNC_RUN:
+        if not drive_available():
+            SYNC["error"] = f"Shared folder not found: {DRIVE}. Is Google Drive running? Changes are kept on this Mac until it is back."
+            return
+        try:
+            for pid, (t, seq) in list(SYNC["dirty"].items()):
+                if not force and time.time() - t < FLUSH_AFTER:
+                    continue
+                if pid in SYNC["conflicts"]:
+                    SYNC["dirty"].pop(pid, None)
+                    continue
+                drive_flush(pid)
+                if SYNC["dirty"].get(pid, (0, None))[1] == seq:
+                    SYNC["dirty"].pop(pid, None)
+            drive_scan()
+            SYNC["error"] = ""
+            SYNC["lastSync"] = now()
+        except OSError as e:
+            SYNC["error"] = f"Could not reach the shared folder: {e}"
+            print(SYNC["error"], flush=True)
+
+
+def drive_status():
+    return {"mode": "drive" if DRIVE else "local", "root": DRIVE, "user": ME, "available": SYNC["available"],
+            "pending": len(SYNC["dirty"]), "conflicts": sorted(SYNC["conflicts"]), "error": SYNC["error"], "lastSync": SYNC["lastSync"]}
+
+
+def init_drive(root):
+    """One-time setup of a shared folder: marker, Deals/, Inbox/; remembers it in <data>/config.json."""
+    root = os.path.abspath(os.path.expanduser(root))
+    for sub in ("Deals", os.path.join("Inbox", "Imported")):
+        os.makedirs(os.path.join(root, sub), exist_ok=True)
+    mark = os.path.join(root, DRIVE_MARK)
+    if not os.path.exists(mark):
+        write_atomic(mark, dumps({"app": "deal-desk", "createdAt": now(), "createdBy": ME}))
+    os.makedirs(DATA, exist_ok=True)
+    cfg = read_json(os.path.join(DATA, "config.json")) or {}
+    cfg["driveRoot"] = root
+    write_atomic(os.path.join(DATA, "config.json"), dumps(cfg))
+    return root
 
 
 # ---------------------------------------------------------------------------
@@ -1221,11 +1595,14 @@ class Handler(BaseHTTPRequestHandler):
             return self.mail_get(path, parse_qs(url.query))
         if path == "/api/projects":
             auto_import()  # picks up files dropped into <data>/import while the app is running
+            drive_sync()
+            SYNC["conflicts"].clear()  # the app reloads the drive's version, so editing can continue from it
             return self.send_json(all_projects())
         if path == "/api/info":
             backups = sorted(os.listdir(BACKUP_DIR)) if os.path.isdir(BACKUP_DIR) else []
             return self.send_json({"db": DB_PATH, "size": os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else 0,
-                                   "backups": len(backups), "lastBackup": backups[-1] if backups else None, "schema": SCHEMA_VERSION})
+                                   "backups": len(backups), "lastBackup": backups[-1] if backups else None, "schema": SCHEMA_VERSION,
+                                   "storage": drive_status()})
         m = re.match(r"^/api/projects/([^/]+)/(versions)$", path)
         if m:
             pid, what = m.group(1), m.group(2)
@@ -1369,12 +1746,22 @@ class Handler(BaseHTTPRequestHandler):
         m = re.match(r"^/api/projects/([^/]+)$", path)
         if m:
             pid = m.group(1)
-            if len(pid) > 80:
+            if len(pid) > 80 or (DRIVE and not ID_OK.match(pid)):
                 return self.send_json({"error": "bad id"}, 400)
             try:
                 p = self.body()
             except ValueError:
                 return self.send_json({"error": "bad json"}, 400)
+            if DRIVE and pid not in SYNC["conflicts"]:
+                stale_save(pid, p.get("_base"))
+            p.pop("_base", None)
+            if pid in SYNC["conflicts"]:
+                c = SYNC["conflicts"][pid]
+                try:  # the conflict copy always holds this Mac's latest state, so nothing typed is lost
+                    write_atomic(c["file"], dumps(dict(p, id=pid, savedBy=ME, savedAt=now())))
+                except OSError:
+                    pass
+                return self.send_json({"error": conflict_message(pid)}, 409)
             con = connect()
             try:
                 with LOCK, con:
@@ -1393,6 +1780,9 @@ class Handler(BaseHTTPRequestHandler):
             con = connect()
             with LOCK, con:
                 vid = int(m.group(1))
+                owner = con.execute("SELECT project_id FROM versions WHERE id=?", (vid,)).fetchone()
+                if owner:
+                    drive_touch(owner["project_id"])
                 if "data" in b:
                     con.execute("UPDATE versions SET data=?, metrics=?, updated_at=? WHERE id=?", (json.dumps(b.get("data") or {}), json.dumps(b.get("metrics")), now(), vid))
                 if b.get("label"):
@@ -1412,12 +1802,13 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK, con:
                 row = con.execute("SELECT name FROM projects WHERE id=?", (pid,)).fetchone()
                 con.execute("DELETE FROM projects WHERE id=?", (pid,))
-                con.execute("INSERT INTO activity (project_id, project_name, action, at) VALUES (?, ?, 'deleted', ?)",
-                            (pid, row["name"] if row else None, now()))
+                con.execute("INSERT INTO activity (project_id, project_name, action, at, user) VALUES (?, ?, 'deleted', ?, ?)",
+                            (pid, row["name"] if row else None, now(), ME))
             con.close()
+            drive_touch(pid)
             # documents stay on disk (moved aside) so nothing is lost by accident
             d = os.path.join(DOC_DIR, pid)
-            if os.path.isdir(d):
+            if not DRIVE and os.path.isdir(d):
                 os.makedirs(os.path.join(DOC_DIR, "_deleted"), exist_ok=True)
                 os.replace(d, os.path.join(DOC_DIR, "_deleted", f"{pid}_{dt.datetime.now():%Y%m%d%H%M%S}"))
             return self.send_json({"ok": True})
@@ -1425,8 +1816,11 @@ class Handler(BaseHTTPRequestHandler):
         if m:
             con = connect()
             with LOCK, con:
+                owner = con.execute("SELECT project_id FROM versions WHERE id=?", (int(m.group(1)),)).fetchone()
                 con.execute("DELETE FROM versions WHERE id=?", (int(m.group(1)),))
             con.close()
+            if owner:
+                drive_touch(owner["project_id"])
             return self.send_json({"ok": True})
         self.send_json({"error": "not found"}, 404)
 
@@ -1445,6 +1839,9 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 dest = backup("manual")
             return self.send_json({"ok": True, "file": os.path.relpath(dest, DATA)})
+        if path == "/api/storage/sync":
+            drive_sync(force=True)
+            return self.send_json(dict(ok=not SYNC["error"], **drive_status()))
         m = re.match(r"^/api/projects/([^/]+)/versions$", path)
         if m:
             try:
@@ -1456,11 +1853,12 @@ class Handler(BaseHTTPRequestHandler):
                 if not con.execute("SELECT 1 FROM projects WHERE id=?", (m.group(1),)).fetchone():
                     con.close()
                     return self.send_json({"error": "save the project first"}, 409)
-                cur = con.execute("INSERT INTO versions (project_id, label, created_at, data, metrics, parent_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                                  (m.group(1), (b.get("label") or "Version").strip()[:120], now(), json.dumps(b.get("data") or {}),
-                                   json.dumps(b.get("metrics")), b.get("parentId"), now()))
-                vid = cur.lastrowid
+                vid = new_version_id()
+                con.execute("INSERT INTO versions (id, project_id, label, created_at, data, metrics, parent_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                            (vid, m.group(1), (b.get("label") or "Version").strip()[:120], now(), json.dumps(b.get("data") or {}),
+                             json.dumps(b.get("metrics")), b.get("parentId"), now()))
             con.close()
+            drive_touch(m.group(1))
             return self.send_json({"ok": True, "id": vid})
         self.send_json({"error": "not found"}, 404)
 
@@ -1471,7 +1869,11 @@ def main():
     ap.add_argument("--no-browser", action="store_true")
     ap.add_argument("--import", dest="imp", metavar="JSON")
     ap.add_argument("--idle-exit", type=float, default=0, metavar="MIN", help="stop after MIN minutes with no open app window")
+    ap.add_argument("--init-drive", metavar="FOLDER", help="set up FOLDER (e.g. a Google Shared Drive) as the shared deal folder, then exit")
     a = ap.parse_args()
+    if a.init_drive:
+        print(f"Shared folder ready: {init_drive(a.init_drive)}\nSettings: {os.path.join(DATA, 'config.json')} – restart Deal Desk to use it.")
+        return
     init_db()
     if a.imp:
         print(f"Imported {import_json(a.imp)} project(s) into {DB_PATH}")
@@ -1486,6 +1888,20 @@ def main():
         if not a.no_browser:
             webbrowser.open(url)
         return
+    if DRIVE:
+        drive_sync(force=True)
+        print(f"Shared folder: {DRIVE} ({'found' if SYNC['available'] else 'NOT FOUND'}), user {ME}", flush=True)
+
+        def sync_loop():
+            while True:
+                time.sleep(SYNC_EVERY)
+                try:
+                    drive_sync()
+                except Exception as e:  # keep syncing whatever one pass hit
+                    SYNC["error"] = f"Sync failed: {e}"
+                    print(SYNC["error"], flush=True)
+        threading.Thread(target=sync_loop, daemon=True).start()
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))  # the launcher stops an older server with kill: write pending deals first
     print(f"Deal Desk is running at {url}\nDatabase: {DB_PATH}\nClose this window (or press Ctrl+C) to stop.")
     if not a.no_browser:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
@@ -1505,6 +1921,8 @@ def main():
         srv.serve_forever()
     except KeyboardInterrupt:
         print("\nStopped.")
+    finally:
+        drive_sync(force=True)
 
 
 if __name__ == "__main__":
