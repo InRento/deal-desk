@@ -3,8 +3,8 @@
 function renderProject() {
   const p = cur(); if (!p) return go('home');
   document.title = p.name + ' · Deal Desk';
-  document.getElementById('app').innerHTML = topBar() + `<main class="wrap" id="tabbody"></main>`;
-  renderKpis(); renderSaveState(); renderTab();
+  document.getElementById('app').innerHTML = topBar() + `<div class="wrap"><div id="lockbar"></div></div><main class="wrap" id="tabbody"></main>`;
+  renderKpis(); renderSaveState(); renderTab(); renderLockBar();
 }
 function renderTab() {
   const el = $('#tabbody'); if (!el) return;
@@ -17,7 +17,7 @@ function renderTab() {
   const f = { overview: tabOverview, inputs: tabInputs, ops: tabOps, assets: tabAssets, adjust: tabAdjust, summary: tabSummary, cashflow: tabCashflow, sens: tabSens, versions: tabVersions }[S.tab] || tabOverview;
   const y = window.scrollY;
   el.innerHTML = (S.modelErr ? `<div class="banner">The model could not be calculated: ${esc(S.modelErr)}</div>` : '') + f();
-  refreshOutputs();
+  refreshOutputs(); applyReadOnly();
   window.scrollTo(0, y);
 }
 const OUT = {};

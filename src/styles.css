@@ -408,3 +408,19 @@ table.pipe tbody+tbody tr.grp th{border-top:0}
 .grid-in td .in[data-kind="text"]{border-color:transparent;background:transparent}
 .grid-in td .in[data-kind="text"]:hover,.grid-in td .in[data-kind="text"]:focus{border-color:var(--line-2)}
 .in:disabled{background:var(--surface-2);color:var(--ink-3);border-color:var(--line)}
+
+/* deal locks (23-locks.js) */
+.lockbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px;padding:7px 8px 7px 12px;border-radius:6px;font-size:12.5px;background:var(--surface-2);color:var(--ink-2)}
+.lockbar b{font-weight:600;color:inherit}
+.lockbar .sub{color:inherit;opacity:.85}
+.lockbar .spacer{flex:1}
+.lockbar.mine{background:var(--good-soft);color:var(--good)}
+.lockbar.other{background:var(--warn-soft);color:var(--warn)}
+.lki{width:13px;height:13px;flex:none;fill:currentColor;stroke:currentColor;stroke-width:1.6;stroke-linejoin:round}
+.lockpill{display:inline-flex;align-items:center;gap:4px;margin-left:4px;padding:1px 7px;border-radius:999px;font-size:11px;font-weight:500;background:var(--warn-soft);color:var(--warn);vertical-align:1px}
+.lockpill.mine{background:var(--good-soft);color:var(--good)}
+.lockpill .lki{width:11px;height:11px}
+body.ro #tabbody .in:disabled,body.ro #tabbody select:disabled{color:var(--ink);opacity:1;cursor:default}
+.stsel:disabled{opacity:1;cursor:default}
+.lockbar .btn.takeover{background:var(--warn);border-color:var(--warn);color:var(--surface)}
+

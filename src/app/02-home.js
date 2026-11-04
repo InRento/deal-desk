@@ -65,8 +65,8 @@ function renderHome() {
   const q = (S.q || '').toLowerCase();
   const list = all.filter(({ p }) => !q || (p.name + ' ' + p.borrower + ' ' + p.country + ' ' + p.projectType + ' ' + (p.nextAction || '')).toLowerCase().includes(q));
   const row = ({ id, p, m: r, r: rr, cur: c }) => `<tr data-open="${id}" tabindex="0" class="${['missing', 'overdue'].includes(nextState(p)) ? 'needs' : ''}">
-    <td><b>${esc(p.name)}</b> ${mailBadge(id)}<div class="sub">${esc([p.borrower, p.projectType].filter(Boolean).join(' · '))}</div></td>
-    <td><select class="stsel ${stCls(p.status)}" data-act="stage-sel" data-id="${id}" aria-label="Stage of ${esc(p.name)}">${STATUSES.map((s) => `<option ${s === p.status ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></td>
+    <td><b>${esc(p.name)}</b> ${lockBadge(id)}${mailBadge(id)}<div class="sub">${esc([p.borrower, p.projectType].filter(Boolean).join(' · '))}</div></td>
+    <td><select class="stsel ${stCls(p.status)}" data-act="stage-sel" data-id="${id}" aria-label="Stage of ${esc(p.name)}" ${canEdit(id) ? '' : 'disabled title="Lock the deal to change its stage"'}>${STATUSES.map((s) => `<option ${s === p.status ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></td>
     <td class="nxtc">${nextCell(p)}</td>
     <td class="n">${r ? money(r.facility, c) : '–'}</td><td class="n">${r ? pctf(rr.rate, 2) : '–'}</td><td class="n">${r ? pctf(r.ltv0) : '–'}</td>
     <td class="n">${r ? pctf(r.irr, 2) : '–'}</td>
@@ -84,7 +84,7 @@ function renderHome() {
     : S.homeView === 'decisions' ? `<div class="filters">${toggle}</div>${decisionsView()}`
     : `${portfolio(all)}<div class="filters">${toggle}<input class="search" id="q" type="search" placeholder="Search name, borrower, next action" aria-label="Search projects" value="${esc(S.q)}">${mailBar}</div>${table}`;
   document.getElementById('app').innerHTML = topBar() + `<main class="wrap">
-    <div class="home-head"><div class="t"><h1>Projects</h1><div class="sub">${S.info ? `Stored in ${esc(S.info.db)} · ${(S.info.size / 1024).toFixed(0)} KB · ${S.info.backups} backup${S.info.backups === 1 ? '' : 's'}` : ''}</div></div>
+    <div class="home-head"><div class="t"><h1>Projects</h1><div class="sub">${S.info && S.info.storage ? `Shared folder: ${esc(S.info.storage.root.split('/').slice(-2).join(' / '))} on Google Drive · you are ${esc(S.info.storage.user)}${S.info.storage.error ? ` · <span class="bad-t">${esc(S.info.storage.error)}</span>` : ''}` : ''}</div></div>
     <div class="row"><button class="btn" data-act="backup-db" title="Copy deals.sqlite into the backups folder">Back up database</button><button class="btn" data-act="backup">Export all (JSON)</button><label class="btn" for="importf">Import</label><input id="importf" type="file" accept=".json,application/json" hidden></div></div>
     ${body}</main>`;
   renderSaveState();
