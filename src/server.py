@@ -69,7 +69,7 @@ ME = CONFIG["user"]
 DB_PATH = os.path.join(DATA, "drive-index.sqlite")
 NO_DRIVE = ("No shared Deal Desk folder found. Open Google Drive for Desktop, check that the \u201cDeal desk\u201d shared drive "
             "shows in Finder, then reopen Deal Desk.")
-APP_VERSION = "3.18.0"  # bump when the program changes; the launcher restarts an older running server
+APP_VERSION = "3.19.0"  # bump when the program changes; the launcher restarts an older running server
 
 # ---------------------------------------------------------------------------
 # Schema. Input columns keep exactly what was typed. NUMERIC columns store plain
@@ -1282,7 +1282,8 @@ def vtuple(v):
 
 
 def check_release():
-    r = read_json(os.path.join(DRIVE, "Releases", "current.json")) or {}
+    channel = "preview" if os.environ.get("DEALDESK_CHANNEL") == "preview" else "current"
+    r = read_json(os.path.join(DRIVE, "Releases", f"{channel}.json")) or {}
     newest, minimum = r.get("version"), r.get("min_version")
     SYNC["update"] = newest if newest and vtuple(newest) > vtuple(APP_VERSION) else None
     SYNC["too_old"] = minimum if minimum and vtuple(APP_VERSION) < vtuple(minimum) else None

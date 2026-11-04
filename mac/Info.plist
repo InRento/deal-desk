@@ -5,8 +5,8 @@
   <key>CFBundleName</key><string>Deal Desk</string>
   <key>CFBundleDisplayName</key><string>Deal Desk</string>
   <key>CFBundleIdentifier</key><string>com.inrento.dealdesk</string>
-  <key>CFBundleVersion</key><string>2.0</string>
-  <key>CFBundleShortVersionString</key><string>2.0</string>
+  <key>CFBundleVersion</key><string>3.19.0</string>
+  <key>CFBundleShortVersionString</key><string>3.19.0</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleExecutable</key><string>DealDesk</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>

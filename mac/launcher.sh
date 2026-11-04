@@ -1,5 +1,5 @@
 #!/bin/bash
-# InRento Deal Desk launcher – the whole app is this script. The program comes from the shared Deal Desk folder on
+# InRento Deal Desk launcher (Deal Desk.app/Contents/Resources/launcher.sh, run by the signed stub mac/launcher.c). The program comes from the shared Deal Desk folder on
 # Google Drive: Releases/current.json names the version, Releases/<version>/ holds its files. Each file is checked
 # against its checksum and kept in ~/Deal Desk/app/<version>, so publishing a release updates every Mac on its next
 # start – nothing to reinstall. If a download is incomplete, the version already on this Mac runs instead.
@@ -25,8 +25,16 @@ DRIVE="${DEALDESK_DRIVE:-}"
 if [ -z "$DRIVE" ]; then
   for m in "$HOME"/Library/CloudStorage/GoogleDrive-*/"Shared drives"/*/.deal-desk; do [ -f "$m" ] && DRIVE="$(dirname "$m")" && break; done
 fi
+if [ -z "$DRIVE" ]; then # Google Drive is there but macOS does not let Deal Desk in (permission declined)
+  for g in "$HOME"/Library/CloudStorage/GoogleDrive-*; do
+    [ -d "$g" ] && ! /bin/ls "$g" >/dev/null 2>&1 && fail "Deal Desk needs your permission to open files in Google Drive. Turn on Deal Desk under System Settings > Privacy & Security > Files & Folders (Google Drive), then open Deal Desk again."
+  done
+fi
 [ -n "$DRIVE" ] && [ -f "$DRIVE/.deal-desk" ] || fail "The shared Deal Desk folder was not found. Open Google Drive, check that the “Deal desk” shared drive shows in Finder, then open Deal Desk again."
-CUR="$DRIVE/Releases/current.json"
+# a Mac trying a release before it is published follows Releases/preview.json ("release": "preview" in config.json)
+CHANNEL=current
+[ -f "$DATA/config.json" ] && [ "$(json "$DATA/config.json" release)" = "preview" ] && CHANNEL=preview
+CUR="$DRIVE/Releases/$CHANNEL.json"
 
 # 2. the program: the published version, unless it cannot be fetched intact
 installed() { [ -n "$1" ] && [ -f "$DATA/app/$1/.complete" ]; }
@@ -86,9 +94,10 @@ for pid in $(/usr/sbin/lsof -ti tcp:"$PORT" -sTCP:LISTEN 2>/dev/null); do
   if /bin/ps -o command= -p "$pid" | /usr/bin/grep -q "server.py"; then say "stopping older server $pid"; kill "$pid"; fi
 done
 for i in $(seq 1 40); do /usr/sbin/lsof -ti tcp:"$PORT" -sTCP:LISTEN >/dev/null 2>&1 || break; sleep 0.25; done
-say "starting $RUN"
+say "starting $RUN ($CHANNEL)"
 cd "$DATA" || exit 1
-DEALDESK_DATA="$DATA" DEALDESK_DRIVE="$DRIVE" DEALDESK_LAUNCHER="$LAUNCHER" nohup "$PY" "$APPDIR/server.py" --no-browser --idle-exit 20 --port "$PORT" >> "$LOG" 2>&1 &
+DEALDESK_DATA="$DATA" DEALDESK_DRIVE="$DRIVE" DEALDESK_LAUNCHER="$LAUNCHER" DEALDESK_CHANNEL="$CHANNEL" nohup "$PY" "$APPDIR/server.py" --no-browser --idle-exit 20 --port "$PORT" >> "$LOG" 2>&1 &
+SRV=$!
 for i in $(seq 1 80); do ping | /usr/bin/grep -q deal-desk && break; sleep 0.25; done
 ping | /usr/bin/grep -q deal-desk || fail "Deal Desk did not start."
 openurl
@@ -96,4 +105,6 @@ openurl
 n=0; for d in $(/bin/ls -t "$DATA/app" 2>/dev/null); do
   installed "$d" || continue; n=$((n + 1)); [ $n -gt 3 ] && [ "$d" != "$RUN" ] && rm -rf "$DATA/app/$d"
 done
+# stay open while the server runs: macOS attributes its Google Drive access to this app only while the app is running
+[ -n "$DEALDESK_TEST" ] || wait "$SRV"
 exit 0

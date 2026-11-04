@@ -6,6 +6,8 @@
 #   ./release.sh --publish           the same, then switch current.json to it (only after Tautvydas says "push")
 #   ./release.sh --rollback 3.19.0   switch current.json back to a version staged earlier
 #   ./release.sh --installer         also (re)build "Install Deal Desk.dmg" in the shared folder (needed when mac/ changes)
+#   ./release.sh --preview           point Releases/preview.json at it: only Macs with "release": "preview" in
+#                                    ~/Deal Desk/config.json run it – for trying a release before it is published
 # Options: --drive <folder>                 the shared folder (default: found the way the app finds it)
 #          --runtime <python dir|.tar.gz>   built-in Python (arm64); needed for the first release, then reused
 #          --min-version <v>                oldest app still allowed to save; raise it when the deal format changes
@@ -26,6 +28,7 @@ ap = argparse.ArgumentParser(prog="release.sh")
 ap.add_argument("--publish", action="store_true")
 ap.add_argument("--rollback", metavar="VERSION")
 ap.add_argument("--installer", action="store_true")
+ap.add_argument("--preview", action="store_true")
 ap.add_argument("--drive")
 ap.add_argument("--runtime")
 ap.add_argument("--min-version")
@@ -125,9 +128,12 @@ manifest = {"version": ver, "files": files, "runtime": runtime, "stagedAt": (old
 write(os.path.join(dest, "manifest.json"), manifest)
 print(f"{'Already staged' if old else 'Staged'}: Releases/{ver}")
 
+if a.preview:
+    write(os.path.join(rel, "preview.json"), dict(manifest, min_version=cur.get("min_version"), previewAt=now))
+    print(f"Preview: Macs with \"release\": \"preview\" in ~/Deal Desk/config.json run {ver}; everyone else stays on {cur.get('version') or 'nothing yet'}")
 if a.publish:
     publish(manifest)
-elif cur.get("version") != ver:
+elif cur.get("version") != ver and not a.preview:
     print(f"Not published – Macs still run {cur.get('version') or 'nothing yet'}. Publish with: ./release.sh --publish")
 
 if a.installer:
@@ -136,10 +142,14 @@ if a.installer:
     os.makedirs(os.path.join(app, "MacOS"))
     os.makedirs(os.path.join(app, "Resources"))
     shutil.copyfile("mac/Info.plist", os.path.join(app, "Info.plist"))
-    shutil.copyfile("mac/DealDesk", os.path.join(app, "MacOS", "DealDesk"))
-    os.chmod(os.path.join(app, "MacOS", "DealDesk"), 0o755)
+    # the executable is a small signed program (macOS keeps the Google Drive permission only for signed code); it runs
+    # Resources/launcher.sh. Ad-hoc signed here – needs the Xcode command line tools (xcode-select --install).
+    subprocess.run(["cc", "-O2", "-arch", "arm64", "-o", os.path.join(app, "MacOS", "DealDesk"), "mac/launcher.c"], check=True)
+    shutil.copyfile("mac/launcher.sh", os.path.join(app, "Resources", "launcher.sh"))
+    os.chmod(os.path.join(app, "Resources", "launcher.sh"), 0o755)
     if os.path.exists("mac/AppIcon.icns"):
         shutil.copyfile("mac/AppIcon.icns", os.path.join(app, "Resources", "AppIcon.icns"))
+    subprocess.run(["codesign", "--force", "-s", "-", os.path.join(tmp, "Deal Desk.app")], check=True, capture_output=True)
     shutil.copyfile("mac/Install.txt", os.path.join(tmp, "Install – read me.txt"))
     os.symlink("/Applications", os.path.join(tmp, "Applications"))
     out = os.path.join(tempfile.mkdtemp(), "Install Deal Desk.dmg")

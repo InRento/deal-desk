@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Install and update from the shared drive, end to end: release.sh stages and publishes into a temporary shared folder
-inside a fake home (at the path Google Drive for Desktop uses), the real launcher (mac/DealDesk) finds it, installs the
+inside a fake home (at the path Google Drive for Desktop uses), the real launcher (mac/launcher.sh) finds it, installs the
 published version with its checksums and starts it; publishing a newer version makes the running app offer a restart,
 the restart runs the new version; a version that arrives damaged is not run; an app older than min_version is read-only.
 The built-in Python is stood in for by a link to this Python. Standard library only:  python3 tests/launcher_test.py
@@ -20,7 +20,7 @@ import urllib.error
 import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LAUNCHER = os.path.join(ROOT, "mac", "DealDesk")
+LAUNCHER = os.path.join(ROOT, "mac", "launcher.sh")
 VERSION = None
 
 
@@ -198,14 +198,43 @@ class LauncherTest(unittest.TestCase):
         subprocess.run(["hdiutil", "attach", "-nobrowse", "-readonly", "-mountpoint", mnt, dmg], check=True, capture_output=True)
         try:
             exe = os.path.join(mnt, "Deal Desk.app", "Contents", "MacOS", "DealDesk")
-            self.assertTrue(os.access(exe, os.X_OK), "launcher is executable")
-            with open(exe) as fh, open(LAUNCHER) as orig:
+            self.assertTrue(os.access(exe, os.X_OK), "the app's program is executable")
+            self.assertIn("Mach-O 64-bit executable arm64", subprocess.run(["file", exe], capture_output=True, text=True).stdout,
+                          "a compiled program, not a script: macOS keeps the Google Drive permission only for signed code")
+            sig = subprocess.run(["codesign", "-dv", os.path.join(mnt, "Deal Desk.app")], capture_output=True, text=True).stderr
+            self.assertIn("Identifier=com.inrento.dealdesk", sig)
+            self.assertEqual(subprocess.run(["codesign", "--verify", "--strict", os.path.join(mnt, "Deal Desk.app")]).returncode, 0, "signature intact")
+            script = os.path.join(mnt, "Deal Desk.app", "Contents", "Resources", "launcher.sh")
+            self.assertTrue(os.access(script, os.X_OK))
+            with open(script) as fh, open(LAUNCHER) as orig:
                 self.assertEqual(fh.read(), orig.read())
             self.assertTrue(os.path.isfile(os.path.join(mnt, "Deal Desk.app", "Contents", "Info.plist")))
             self.assertTrue(os.path.isfile(os.path.join(mnt, "Install – read me.txt")))
             self.assertEqual(os.readlink(os.path.join(mnt, "Applications")), "/Applications")
         finally:
             subprocess.run(["hdiutil", "detach", mnt, "-quiet"], capture_output=True)
+
+    def test_8_preview_channel(self):
+        """A release can be tried on one Mac before it is published: only a Mac set to "preview" follows preview.json."""
+        self.release("--rollback", VERSION)
+        self.publish_variant("9.9.7")  # stands in for a staged release; now make it the preview, not the published one
+        rel = os.path.join(self.drive, "Releases")
+        os.replace(os.path.join(rel, "current.json"), os.path.join(rel, "preview.json"))
+        self.release("--rollback", VERSION)
+        cfg = os.path.join(self.home, "Deal Desk", "config.json")
+        self.stop_server()
+        self.launch()
+        self.assertEqual(self.running(), VERSION, "a Mac not set to preview stays on the published version")
+        with open(cfg, "w") as fh:
+            json.dump({"release": "preview"}, fh)
+        try:
+            self.stop_server()
+            self.launch()
+            self.assertEqual(self.running(), "9.9.7")
+            self.assertIn("starting 9.9.7 (preview)", self.log())
+            self.assertIsNone(self.call("GET", "/api/locks")["update"]["available"], "the preview Mac compares with preview.json")
+        finally:
+            os.remove(cfg)
 
 
 if __name__ == "__main__":

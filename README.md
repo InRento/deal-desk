@@ -12,7 +12,7 @@ The underwriting app for InRento loans: a deal register, a monthly cash-flow mod
 | `src/styles.css` | All styling (light and dark) |
 | `vendor/` | Third-party browser libraries: SheetJS (Excel), jsPDF + html2canvas (PDF), PptxGenJS (PowerPoint) |
 | `tests/` | Engine regression (M23 against the original Excel), server tests with a fake Gmail, shared-folder tests (two Macs), launcher install/update test, browser tests |
-| `mac/` | The app: launcher (`Deal Desk.app/Contents/MacOS/DealDesk`), `Info.plist` and the install note – `release.sh --installer` turns them into `Install Deal Desk.dmg` |
+| `mac/` | The app: `launcher.c` (the small signed program in `Contents/MacOS/DealDesk`), `launcher.sh` (the launcher it runs, in `Contents/Resources`), `Info.plist` and the install note – `release.sh --installer` turns them into `Install Deal Desk.dmg` |
 | `docs/` | Change log and the format Claude uses to draft new deals into the import folder |
 | `dist/` | Build output – exactly what `release.sh` puts in `Releases/<version>/` on the shared drive (generated, do not edit) |
 

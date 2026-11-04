@@ -9,7 +9,8 @@ for downloads.
 2. Open Deal Desk from Applications. The first time, macOS says it cannot check the app: click Done, open
    System Settings > Privacy & Security, scroll down, click "Open Anyway" next to Deal Desk and confirm with your
    password. (Older macOS: right-click the app > Open > Open.) Needed once.
-3. The first start fetches Deal Desk from the shared drive (a few seconds) and opens it in your browser at
+3. macOS asks whether Deal Desk may access files managed by Google Drive: click Allow (once).
+4. The first start fetches Deal Desk from the shared drive (a few seconds) and opens it in your browser at
    http://127.0.0.1:8765. Keep it in the Dock.
 
 Updates come by themselves: when a new version is published on the shared drive, Deal Desk shows

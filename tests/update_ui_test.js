@@ -33,7 +33,7 @@ const check = (ok, what, got) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}$
     const m = JSON.parse(fs.readFileSync(path.join(rel, base, 'manifest.json'), 'utf8'));
     fs.writeFileSync(path.join(rel, 'current.json'), JSON.stringify(Object.assign(m, { version: v, files: m.files.map((f) => ({ name: f.name, sha256: sha(path.join(rel, v, f.name)) })) }, extra)));
   };
-  const r = spawnSync(path.join(ROOT, 'mac', 'DealDesk'), [], { env, encoding: 'utf8', timeout: 60000 });
+  const r = spawnSync(path.join(ROOT, 'mac', 'launcher.sh'), [], { env, encoding: 'utf8', timeout: 60000 });
   check(r.status === 0, 'launcher installs and starts the published version', r.stderr);
   const browser = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
   try {
