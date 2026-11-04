@@ -622,6 +622,11 @@ def auto_import():
         try:
             n = import_json(os.path.join(d, f), skip_existing=True)
             print(f"Imported {n} project(s) from {f}", flush=True)
+            item = read_json(os.path.join(d, f))
+            if isinstance(item, dict) and item.get("id") and "inputs" in item:  # one deal per file: its documents can follow
+                k = inbox_documents(d, f, item["id"], item)
+                if k:
+                    print(f"Moved {k} document(s) from {f[:-5]}/ to the deal", flush=True)
         except (OSError, ValueError) as e:
             print(f"Could not import {f}: {e}", flush=True)
             continue
@@ -658,7 +663,7 @@ DEAL_SCHEMA = 1
 FLUSH_AFTER = float(os.environ.get("DEALDESK_FLUSH_SECONDS", "5"))  # batches typing into one drive write
 SYNC_EVERY = float(os.environ.get("DEALDESK_SYNC_SECONDS", "3"))
 SYNC = {"dirty": {}, "conflicts": {}, "seen": {}, "available": False, "error": "", "lastSync": None,
-        "locks": {}, "newlocks": {}, "unsaved": {}}
+        "locks": {}, "newlocks": {}, "unsaved": {}, "missing": {}}
 SYNC_RUN = threading.Lock()   # one sync pass at a time
 ID_OK = re.compile(r"^[A-Za-z0-9._-]{1,80}$")
 
@@ -748,6 +753,12 @@ def drive_flush(pid):
     disk = read_json(os.path.join(d, "deal.json"))
     if disk is not None and int(disk.get("rev") or 0) != base:
         return drive_conflict(pid, d, deal, disk)
+    want = folder_for(deal.get("name"), pid)
+    if folder != want and os.path.isdir(d) and not os.path.exists(os.path.join(deals_dir(), want)):
+        # the folder follows the deal's name (it may have been named before the name was typed); documents and lock move with it
+        os.rename(d, os.path.join(deals_dir(), want))
+        SYNC["seen"].pop(folder, None)
+        folder, d = want, os.path.join(deals_dir(), want)
     os.makedirs(os.path.join(d, "versions"), exist_ok=True)
     if pid in SYNC["newlocks"]:
         write_claim(os.path.join(d, "locks"), SYNC["newlocks"][pid])
@@ -921,8 +932,10 @@ def drive_scan():
     gone = [r["key"][7:] for r in con.execute("SELECT key, value FROM meta WHERE key LIKE 'folder:%'")
             if not os.path.isdir(os.path.join(root, r["value"]))]
     con.close()
+    SYNC["missing"] = {pid: SYNC["missing"].get(pid, 0) + 1 for pid in gone}
     for pid in gone:
-        if pid in SYNC["dirty"]:
+        # a renamed folder can be missing for a moment while Drive syncs the rename: drop a deal only on the second miss
+        if pid in SYNC["dirty"] or SYNC["missing"][pid] < 2:
             continue
         con = connect()
         with LOCK, con:
@@ -1156,6 +1169,97 @@ def import_blocked(path):
             if c and c["user"] != ME:
                 return c["user"]
     return None
+
+
+# ---- Documents: files in Deals/<deal>/Documents/<category>/. Anyone may add them without the lock – files never touch
+# deal.json, so they cannot collide with the holder's edits. Finder and Google Drive work on the same folder.
+DOC_CATEGORIES = ["Teaser, business plan", "Appraisal", "Financial statements", "Legal", "Photos", "Other"]
+UPLOAD_LIMIT = 500 * 1024 * 1024
+DOC_SKIP = re.compile(r"^(\.|~\$|Icon\r)|\.(tmp|part)$")  # hidden files, Office lock files, unfinished copies
+
+
+def docs_root(pid, create=False):
+    con = connect()
+    try:
+        folder = meta_get(con, f"folder:{pid}")
+        if not folder and create:  # a deal not written to the drive yet: its folder starts with its documents
+            r = con.execute("SELECT name FROM projects WHERE id=?", (pid,)).fetchone()
+            if not r:
+                return None
+            folder = folder_for(r["name"], pid)
+            with LOCK, con:
+                meta_set(con, f"folder:{pid}", folder)
+    finally:
+        con.close()
+    if not folder:
+        return None
+    root = os.path.join(deals_dir(), folder, "Documents")
+    if create:
+        os.makedirs(root, exist_ok=True)
+    return root
+
+
+def list_documents(pid):
+    root = docs_root(pid)
+    out = []
+    for base, dirs, files in os.walk(root) if root and os.path.isdir(root) else []:
+        dirs[:] = sorted(x for x in dirs if not DOC_SKIP.search(x))
+        for f in sorted(files):
+            if DOC_SKIP.search(f):
+                continue
+            fp = os.path.join(base, f)
+            rel = os.path.relpath(fp, root)
+            st = os.stat(fp)
+            out.append({"path": rel, "name": f, "category": rel.split(os.sep)[0] if os.sep in rel else "",
+                        "size": st.st_size, "modified": dt.datetime.fromtimestamp(st.st_mtime, dt.timezone.utc).isoformat(timespec="seconds")})
+    return out
+
+
+def doc_path(pid, rel):
+    """The file (or the Documents folder itself for "") inside this deal's Documents – never anything outside it."""
+    root = docs_root(pid, create=not rel)
+    if not root:
+        return None
+    full = os.path.realpath(os.path.join(root, rel or ""))
+    top = os.path.realpath(root)
+    return full if (full == top or full.startswith(top + os.sep)) and os.path.exists(full) else None
+
+
+def unique_path(path):
+    stem, ext = os.path.splitext(path)
+    n = 2
+    while os.path.exists(path):
+        path = f"{stem} ({n}){ext}"
+        n += 1
+    return path
+
+
+def inbox_documents(inbox, f, pid, item):
+    """Documents that came with a draft (Inbox/<draft name>/) move into the deal's Documents. Category: the draft's
+    _documents [{file, kind}], else the subfolder they sit in, else Other."""
+    import shutil
+    src = os.path.join(inbox, f[:-5])
+    if not os.path.isdir(src):
+        return 0
+    kinds = {str(x.get("file") or "").replace("/", os.sep): x.get("kind") for x in (item.get("_documents") or []) if isinstance(x, dict)}
+    root = docs_root(pid, create=True)
+    n = 0
+    for base, dirs, files in os.walk(src):
+        for name in files:
+            if DOC_SKIP.search(name):
+                continue
+            rel = os.path.relpath(os.path.join(base, name), src)
+            kind = kinds.get(rel) or kinds.get(name) or (rel.split(os.sep)[0] if os.sep in rel else "Other")
+            dest = unique_path(os.path.join(root, safe_name(re.sub(r"\s*/\s*", ", ", kind)), safe_name(name)))
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            shutil.move(os.path.join(base, name), dest)
+            n += 1
+    left = [x for _, _, fs in os.walk(src) for x in fs if not DOC_SKIP.search(x)]
+    if left:
+        shutil.move(src, unique_path(os.path.join(inbox, "Imported", f[:-5])))
+    else:
+        shutil.rmtree(src, ignore_errors=True)
+    return n
 
 
 def drive_status():
@@ -1930,6 +2034,11 @@ class Handler(BaseHTTPRequestHandler):
             revs = {r["key"][7:]: int(r["value"]) for r in con.execute("SELECT key, value FROM meta WHERE key LIKE 'extrev:%'")}
             con.close()
             return self.send_json({"me": ME, "locks": {pid: public_lock(c) for pid, c in SYNC["locks"].items()}, "revs": revs, "storage": drive_status()})
+        m = re.match(r"^/api/projects/([^/]+)/documents$", path)
+        if m:
+            root = docs_root(m.group(1))
+            return self.send_json({"documents": list_documents(m.group(1)), "categories": DOC_CATEGORIES,
+                                   "folder": os.path.relpath(root, DRIVE) if root else None})
         m = re.match(r"^/api/projects/([^/]+)$", path)
         if m:
             got = [p for p in all_projects() if p["id"] == m.group(1)]
@@ -2195,6 +2304,45 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/storage/sync":
             drive_sync(force=True)
             return self.send_json(dict(ok=not SYNC["error"], **drive_status()))
+        m = re.match(r"^/api/projects/([^/]+)/documents/open$", path)
+        if m:
+            try:
+                b = self.body()
+            except ValueError:
+                return self.send_json({"error": "bad json"}, 400)
+            fp = doc_path(m.group(1), str(b.get("path") or ""))
+            if not fp:
+                return self.send_json({"error": "That file is not in this deal's Documents folder (moved or renamed?)."}, 404)
+            cmd = ["/usr/bin/open"] + (["-R"] if b.get("reveal") else []) + [fp]
+            if not os.environ.get("DEALDESK_NO_OPEN"):  # tests check the path without opening Finder
+                subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return self.send_json({"ok": True, "opened": os.path.relpath(fp, DRIVE), "reveal": bool(b.get("reveal"))})
+        m = re.match(r"^/api/projects/([^/]+)/documents$", path)
+        if m:
+            q = parse_qs(url.query)
+            n = int(self.headers.get("Content-Length") or 0)
+            if n > UPLOAD_LIMIT:
+                return self.send_json({"error": f"Files over {UPLOAD_LIMIT // 2**20} MB: copy them into the deal's Documents folder in Finder."}, 413)
+            root = docs_root(m.group(1), create=True)
+            if not root:
+                return self.send_json({"error": "save the project first"}, 409)
+            cat = safe_name(re.sub(r"\s*/\s*", ", ", (q.get("category") or ["Other"])[0] or "Other"))
+            dest = unique_path(os.path.join(root, cat, safe_name((q.get("name") or ["file"])[0])))
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            tmp = os.path.join(os.path.dirname(dest), f".{os.path.basename(dest)}.part")  # hidden until complete
+            with open(tmp, "wb") as fh:
+                left = n
+                while left > 0:
+                    chunk = self.rfile.read(min(left, 1 << 20))
+                    if not chunk:
+                        break
+                    fh.write(chunk)
+                    left -= len(chunk)
+            if left:
+                os.remove(tmp)
+                return self.send_json({"error": "upload interrupted"}, 400)
+            os.replace(tmp, dest)
+            return self.send_json({"ok": True, "path": os.path.relpath(dest, root)})
         m = re.match(r"^/api/projects/([^/]+)/lock$", path)
         if m:
             pid = m.group(1)
