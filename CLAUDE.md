@@ -58,9 +58,10 @@ Read README.md first. This file is how the code is put together and the rules fo
 - Show a draft (screenshots or a sample file) before shipping visible changes, unless he says to push.
 
 ## Git
-- This folder is a local git repository. `main` = what is published (`Releases/current.json` on the shared drive); each release is tagged `v<APP_VERSION>`.
-- No remote: `tests/deals/` and `tests/expected/` hold real deals, so never push this repository to GitHub or any other hosted service.
-- One branch per change (`feature/<name>`), committed as the work goes. Merge into `main`, tag and `./release.sh --publish` only when it ships (after Tautvydas says "push"); staging (`./release.sh` without `--publish`) is fine before that. Unshipped branches replace the old `pending/` folders.
+- Remote: GitHub `InRento/deal-desk` (must stay **private** – `tests/deals/` and `tests/expected/` hold real deals). `main` = what is published (`Releases/current.json` on the shared drive); each release is tagged `v<APP_VERSION>`.
+- **Every code change is committed to the GitHub repo** – no change ships, and no work is left, only as loose files on a Mac or in a cloud workspace.
+- One branch per change (`feature/<name>`), committed and pushed as the work goes. Merge into `main`, tag and `./release.sh --publish` only when it ships (after Tautvydas says "push"); staging (`./release.sh` without `--publish`) is fine before that. Never publish a version whose code is not on `main` on GitHub.
+- Claude has no GitHub login. When it cannot run git on the Mac, it edits the files in the local clone and gives Tautvydas the branch and commit message to commit and push from GitHub Desktop.
 - `dist/`, zips, `__pycache__` and databases are never committed (`.gitignore`).
 
 ## Checks before every release
