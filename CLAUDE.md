@@ -37,6 +37,7 @@ Read README.md first. This file is how the code is put together and the rules fo
 | 20-judgement | decision log: pre-mortem, snapshot at the decision, post-mortem; Home → Decisions |
 | 19-trace | "How it is calculated" panel: numbers tagged `data-tr="c:key:period"`, `"m:summaryKey"` or `"y:key:year"`; formulas come from `src/trace.js` |
 | 23-locks | deal locks: lock bar, Home badges, Lock & edit / Unlock / Force unlock, read-only mode (`canEdit`, `applyReadOnly`, `readOnlyRevert` in `scheduleSave`), 5-second poll of `/api/locks` that refreshes read-only copies |
+| 24-documents | Documents tab: list of the deal's `Documents/<category>/` on the drive, add (drag-and-drop / file picker), open / show in Finder (server `documents/open`, paths checked to stay inside the folder); source tags link to files via `file` (editor in 15-sources) |
 | 99-boot | first render and project load |
 
 ## Adding a model input

@@ -6,7 +6,8 @@
 
 ## Delivery
 - Write `Inbox/<yyyy-mm-dd>-<slug>.json` in the shared “Deal desk” folder on Google Drive – one project in the same shape as the app's JSON export, with a stable `id` (letters, digits, `.`, `_`, `-`). The first Deal Desk that loads its project list imports it and moves the file to `Inbox/Imported/`; `_replace: true` re-imports over an existing id.
-- Source documents are not stored in the app any more (since v3.10). Name them in the source tags instead.
+- Documents: put the translated files next to the draft in a folder with the same name – `Inbox/<yyyy-mm-dd>-<slug>/` for `Inbox/<yyyy-mm-dd>-<slug>.json` (one project per file). On import they move into the deal's `Documents/<category>/`: the category comes from `_documents: [{"file": "appraisal_LT.pdf", "kind": "Appraisal"}]`, else from a subfolder (`Inbox/<slug>/Financial statements/FS 2025.xlsx`), else `Other`. Categories used in the app: Teaser, business plan · Appraisal · Financial statements · Legal · Photos · Other.
+- Link a source tag to its file with `file` (path inside the deal's Documents): `{"doc": "Appraisal Ober-Haus", "file": "Appraisal/appraisal_LT.pdf", "loc": "p.12"}` – “Open” on the field's chip then opens that file.
 - Source tags in `inputs.sources`, keyed by the field's data-k path:
   `{"inputs.loan": {"doc": "Business plan", "loc": "p.3", "note": "EUR 2.5m requested"}, "assets.0.market": {"doc": "Appraisal AB26-0430-07N", "loc": "p.12", "note": "land plot"}, "inputs.term": {"doc": "App default", "note": "not given", "assumed": true}}`.
   `doc: "Email"` with `loc` = a text snippet points to an email: "Open" finds the Gmail thread in the project's label containing the snippet.
