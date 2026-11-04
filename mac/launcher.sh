@@ -97,7 +97,6 @@ for i in $(seq 1 40); do /usr/sbin/lsof -ti tcp:"$PORT" -sTCP:LISTEN >/dev/null 
 say "starting $RUN ($CHANNEL)"
 cd "$DATA" || exit 1
 DEALDESK_DATA="$DATA" DEALDESK_DRIVE="$DRIVE" DEALDESK_LAUNCHER="$LAUNCHER" DEALDESK_CHANNEL="$CHANNEL" nohup "$PY" "$APPDIR/server.py" --no-browser --idle-exit 20 --port "$PORT" >> "$LOG" 2>&1 &
-SRV=$!
 for i in $(seq 1 80); do ping | /usr/bin/grep -q deal-desk && break; sleep 0.25; done
 ping | /usr/bin/grep -q deal-desk || fail "Deal Desk did not start."
 openurl
@@ -105,6 +104,5 @@ openurl
 n=0; for d in $(/bin/ls -t "$DATA/app" 2>/dev/null); do
   installed "$d" || continue; n=$((n + 1)); [ $n -gt 3 ] && [ "$d" != "$RUN" ] && rm -rf "$DATA/app/$d"
 done
-# stay open while the server runs: macOS attributes its Google Drive access to this app only while the app is running
-[ -n "$DEALDESK_TEST" ] || wait "$SRV"
+# the app quits here (so the installer can replace it); the server it started keeps its Google Drive access
 exit 0
