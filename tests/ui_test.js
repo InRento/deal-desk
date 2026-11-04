@@ -15,7 +15,7 @@ const check = (ok, what, got) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}$
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dealdesk-ui-')), port = await freePort();
   // always a temporary shared folder: never the real one on this Mac
   const drive = path.join(tmp, 'drive'); fs.mkdirSync(drive); fs.writeFileSync(path.join(drive, '.deal-desk'), '{}');
-  const srv = spawn('python3', [process.env.DIST ? path.join(process.env.DIST, 'server.py') : path.join(ROOT, 'dist', 'server.py'), '--port', String(port), '--no-browser'], { env: Object.assign({}, process.env, { DEALDESK_DATA: tmp, DEALDESK_DRIVE: drive, DEALDESK_USER: 'test@example.com', DEALDESK_FLUSH_SECONDS: '0' }), stdio: 'ignore' });
+  const srv = spawn('python3', [process.env.DIST ? path.join(process.env.DIST, 'server.py') : path.join(ROOT, 'dist', 'server.py'), '--port', String(port), '--no-browser'], { env: Object.assign({}, process.env, { DEALDESK_DATA: tmp, DEALDESK_DRIVE: drive, DEALDESK_USER: 'test@example.com', DEALDESK_FLUSH_SECONDS: '0', DEALDESK_NO_OPEN: '1' }), stdio: 'ignore' });
   await sleep(1500);
   const browser = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
   const ctx = await browser.newContext({ acceptDownloads: true, viewport: { width: 1440, height: 900 } });
@@ -97,7 +97,27 @@ const check = (ok, what, got) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}$
     // 11 saved to the shared folder
     await sleep(1500); await pg.reload(); await sleep(1200);
     check((await text('#app')).includes('Test Tower, Riga'), 'project is still there after a reload');
-    check(fs.readdirSync(path.join(drive, 'Deals')).some((f) => f.startsWith('Test Tower, Riga (') && fs.existsSync(path.join(drive, 'Deals', f, 'deal.json'))), 'project written to the shared folder');
+    check(fs.readdirSync(path.join(drive, 'Deals')).some((f) => f.startsWith('Test Tower, Riga (') && fs.existsSync(path.join(drive, 'Deals', f, 'deal.json'))), 'project written to the shared folder', JSON.stringify(fs.readdirSync(path.join(drive, 'Deals'))));
+    // 12 documents: added through the file picker, listed by category, stored in the deal's folder on the drive
+    await pg.click('tr[data-open] b'); await sleep(600); // the reload above lands on Home
+    await tab('docs'); await sleep(500);
+    check((await text('#tabbody')).includes('No documents yet'), 'Documents tab starts empty');
+    await pg.selectOption('#doccat', 'Appraisal');
+    await pg.setInputFiles('#docfile', [{ name: 'Appraisal Riga 2026.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4 fictional') }, { name: 'Site photo.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('jpg') }]);
+    await sleep(1500);
+    const docsText = await text('#tabbody');
+    check(docsText.includes('Appraisal 2') && docsText.includes('Appraisal Riga 2026.pdf') && docsText.includes('Site photo.jpg'), 'uploaded files are listed under their category', docsText.slice(0, 300));
+    const dealDir = fs.readdirSync(path.join(drive, 'Deals')).find((f) => f.startsWith('Test Tower, Riga ('));
+    check(fs.existsSync(path.join(drive, 'Deals', dealDir, 'Documents', 'Appraisal', 'Appraisal Riga 2026.pdf')), 'file stored in Documents/Appraisal on the drive');
+    if (process.env.SHOTS) { fs.mkdirSync(process.env.SHOTS, { recursive: true }); await pg.screenshot({ path: path.join(process.env.SHOTS, '7-documents-tab.png'), clip: { x: 0, y: 0, width: 1440, height: 520 } }); }
+    // 13 a source tag linked to a document opens that file
+    await tab('inputs'); await pg.click('[data-k="inputs.rate"]', { button: 'right' }); await sleep(600);
+    await pg.selectOption('#se-file', path.join('Appraisal', 'Appraisal Riga 2026.pdf'));
+    if (process.env.SHOTS) await pg.screenshot({ path: path.join(process.env.SHOTS, '8-source-linked-to-file.png'), clip: { x: 0, y: 150, width: 1440, height: 520 } });
+    await pg.click('#se-save'); await sleep(400);
+    await pg.click('[data-k="inputs.rate"]'); await sleep(300);
+    const [req] = await Promise.all([pg.waitForRequest((r) => r.url().endsWith('/documents/open'), { timeout: 5000 }), pg.dispatchEvent('#srcchip [data-src="open"]', 'mousedown')]);
+    check(JSON.parse(req.postData()).path === path.join('Appraisal', 'Appraisal Riga 2026.pdf'), 'source chip Open opens the linked file', req.postData());
   } catch (e) { console.log('FAIL', e.message); failures++; }
   check(!errors.length, 'no page errors', errors.join(' | '));
   await browser.close(); srv.kill(); await new Promise((r) => srv.exitCode !== null ? r() : srv.on('exit', r)); fs.rmSync(tmp, { recursive: true, force: true }); // the server writes pending deals on exit

@@ -424,3 +424,17 @@ body.ro #tabbody .in:disabled,body.ro #tabbody select:disabled{color:var(--ink);
 .stsel:disabled{opacity:1;cursor:default}
 .lockbar .btn.takeover{background:var(--warn);border-color:var(--warn);color:var(--surface)}
 
+/* documents tab (24-documents.js) */
+#docdrop{transition:box-shadow .15s}
+#docdrop.over{box-shadow:0 0 0 2px var(--accent) inset;background:var(--accent-soft)}
+.dochead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.dochead h3{margin:0 0 2px}
+.dochead .spacer{flex:1}
+.docadd{display:flex;align-items:center;gap:6px}
+.docadd select{width:auto;min-width:170px}
+table.docs td{vertical-align:middle}
+table.docs tr.grp th{text-align:left;font-weight:600;padding-top:14px}
+.doclink{background:none;border:0;padding:0;font:inherit;color:var(--accent);cursor:pointer;text-align:left}
+.doclink:hover{text-decoration:underline}
+.docempty{padding:28px 0;text-align:center;border:1px dashed var(--line-2);border-radius:6px}
+
