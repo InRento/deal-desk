@@ -5,7 +5,7 @@
 **Only what is certain.** Values come from the documents or from him. Anything Claude has to assume (or an app default that matters, like term or drawdown date) is tagged `"assumed": true` so the app shows it amber and the model check lists it until he confirms. Plans without dates (e.g. a sales plan with prices but no timing) go into the notes, not the model.
 
 ## Delivery
-- Write `~/Deal Desk/import/<yyyy-mm-dd>-<slug>.json` – one project in the same shape as the app's JSON export, with a stable `id`. The server imports each file once when the project list loads (meta key `imported:<file>`); `_replace: true` re-imports over an existing id.
+- Write `Inbox/<yyyy-mm-dd>-<slug>.json` in the shared “Deal desk” folder on Google Drive – one project in the same shape as the app's JSON export, with a stable `id` (letters, digits, `.`, `_`, `-`). The first Deal Desk that loads its project list imports it and moves the file to `Inbox/Imported/`; `_replace: true` re-imports over an existing id.
 - Source documents are not stored in the app any more (since v3.10). Name them in the source tags instead.
 - Source tags in `inputs.sources`, keyed by the field's data-k path:
   `{"inputs.loan": {"doc": "Business plan", "loc": "p.3", "note": "EUR 2.5m requested"}, "assets.0.market": {"doc": "Appraisal AB26-0430-07N", "loc": "p.12", "note": "land plot"}, "inputs.term": {"doc": "App default", "note": "not given", "assumed": true}}`.

@@ -8,6 +8,7 @@ Read README.md first. This file is how the code is put together and the rules fo
 - No framework. Each tab is a function returning an HTML string (`tabInputs`, `tabSens`, …), rendered by `renderTab()`. Live numbers are placeholders `<div data-out="name">` filled by `OUT.name()` on every recalculation (`refreshOutputs()`), so typing never re-renders the tab.
 - Every editable field has `data-k="<path>"` (`inputs.rate`, `assets.3.salePrice`, `scenarios.2.deck`). `onEdit` (11-editing.js) writes the value into the project, schedules the save (`scheduleSave`) and recalculates. Selects and checkboxes re-render the tab; text fields do not.
 - Buttons use `data-act="…"`; the main switch is in 11-editing.js, feature-specific actions sit in their own file.
+- Storage: deals live in the shared Google Drive folder (`Deals/<name> (<id>)/deal.json` + `versions/` + `activity/`); the server's SQLite database is only this Mac's index of it plus the Gmail cache. There is no local-only mode. Tests always pass `DEALDESK_DRIVE` (a temporary folder) – without it the server finds the real shared drive on this Mac.
 - State: `S` (01-core.js). `cur()` is the open project, `S.model` the engine result shown (EUR view when switched), `S.modelOrig` the result in the project's own currency (the model check always uses this one).
 - **One definition per function.** Do not wrap or reassign an existing function (`const _x = x; x = function …`); extend the original instead. v3.11 removed 26 such wrappers.
 
@@ -37,7 +38,7 @@ Read README.md first. This file is how the code is put together and the rules fo
 | 99-boot | first render and project load |
 
 ## Adding a model input
-1. `src/server.py`: add `(key, column, type)` to `INPUT_FIELDS` (columns are created automatically on start). A field missing here is silently lost on save.
+1. `src/server.py`: add `(key, column, type)` to `INPUT_FIELDS` (columns are created automatically on start). A field missing here is silently lost on save – also from `deal.json` on the drive, which is written from the index.
 2. 01-core `DEFAULT_INPUTS`: default value (strings; percentages typed in percent, 8.5 = 8.5%).
 3. 04-inputs `INPUT_SECTIONS`: `F(key, label, kind, help)` and put the key in `IN_LAYOUT` (`main` or `more`).
 4. `src/engine.js` `resolve()` turns the strings into numbers; use it in `run()`. If it changes a calculation, update the matching formula in `src/trace.js` – `tests/trace_test.js` fails until they agree.
@@ -65,5 +66,6 @@ Read README.md first. This file is how the code is put together and the rules fo
 - **Engine guard** (`tests/engine_test.js`): the confirmed figures of Skýra, Ustroń, Noa and M23 (reconciled once against the analysts' models) must still come out, and every result of every deal in `tests/deals/` must equal `tests/expected/engine.json`.
 - **App guard** (`tests/app_snapshot.js`, needs Playwright): every tab, the committee deck and the Excel export of every test deal must equal `tests/expected/app.json` (clock fixed at 24 Oct 2026).
 - A guard failure means a number moved. Fix it, or – when the change is intended – re-record with `--update` and write in docs/CHANGELOG.md which numbers changed and why. Never re-record just to make a failure go away.
-- `tests/server_test.py` covers storage, import, backups, the origin guard and the Gmail read-only rule; `tests/ui_test.js` builds a fictional deal through the browser.
+- `tests/server_test.py` covers storage, inbox, backups, the origin guard and the Gmail read-only rule; `tests/drive_test.py` runs two servers on one shared folder (saves across Macs, stale copies, rev conflicts, versions, deletes, inbox, drive missing); `tests/ui_test.js` builds a fictional deal through the browser.
+- `data/` (gitignored) holds a copy of Tautvydas's pre-drive `~/Deal Desk` – migration source for development. Read it only through copies; never modify or commit it.
 - `tests/deals/` holds real deals: keep this folder private (package.sh never includes it).

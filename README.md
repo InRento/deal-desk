@@ -1,6 +1,6 @@
 # InRento Deal Desk
 
-The underwriting app for InRento loans: a deal register, a monthly cash-flow model with sensitivity, a model check, versions, read-only Gmail tracking and a committee deck (PowerPoint / PDF). It runs on the Mac as **Deal Desk.app**: a small local Python server plus one HTML page. No AI or API calls inside the app; nothing leaves the computer except the Gmail read (IMAP, read-only) and the ECB exchange-rate lookup.
+The underwriting app for InRento loans: a deal register, a monthly cash-flow model with sensitivity, a model check, versions, read-only Gmail tracking and a committee deck (PowerPoint / PDF). It runs on the Mac as **Deal Desk.app**: a small local Python server plus one HTML page. Deals are kept in a shared folder on Google Drive (the “Deal desk” Shared Drive, synced by Google Drive for Desktop), so the whole team works on the same deals. No AI or API calls inside the app: it only reads and writes files in that folder, plus the Gmail read (IMAP, read-only) and the ECB exchange-rate lookup.
 
 ## Folders
 
@@ -8,7 +8,7 @@ The underwriting app for InRento loans: a deal register, a monthly cash-flow mod
 |---|---|
 | `src/app/` | The app, one file per feature, joined in name order by `build.sh` (see CLAUDE.md for what lives where) |
 | `src/engine.js` | The model: monthly cash flow, loan, sales, metrics, break-evens. No browser code, also runs in Node |
-| `src/server.py` | Local server: SQLite storage, versions, import folder, backups, Gmail (read-only), ECB rates. Python standard library only |
+| `src/server.py` | Local server: deals in the shared folder (with a local SQLite index), versions, inbox, Gmail (read-only), ECB rates. Python standard library only |
 | `src/styles.css` | All styling (light and dark) |
 | `vendor/` | Third-party browser libraries: SheetJS (Excel), jsPDF + html2canvas (PDF), PptxGenJS (PowerPoint) |
 | `tests/` | Engine regression (M23 against the original Excel), server tests with a fake Gmail, browser flow test |
@@ -29,9 +29,23 @@ Bump `APP_VERSION` in `src/server.py` with every release: the launcher restarts 
 
 ## Data
 
-Everything lives in `~/Deal Desk` (not in this folder): `deals.sqlite`, daily `backups/`, `import/` and `deal-desk.log`. Files attached in versions before 3.10 are still in `~/Deal Desk/documents/` but are no longer shown.
+Deals live in the shared folder (found automatically under `~/Library/CloudStorage/GoogleDrive-*/Shared drives/`, recognised by its `.deal-desk` marker):
 
-New deals drafted by Claude arrive as JSON in `~/Deal Desk/import/` and are imported once when the project list loads – format in `docs/intake.md`.
+```
+Deal desk/
+  Deals/<name> (<id>)/   deal.json (the project, with a rev number), versions/<id>.json, activity/<user>.jsonl, Documents/<category>/
+  Deals/_deleted/        deleted deals, moved here – nothing is erased
+  Inbox/                 drafts from Claude; imported once, then moved to Inbox/Imported/
+```
+
+Each Mac keeps only its own things in `~/Deal Desk`: `drive-index.sqlite` (an index of the shared folder plus this Mac's Gmail cache – never put SQLite on the drive), daily `backups/` of that index and `deal-desk.log`. A pre-drive `deals.sqlite` there is left untouched.
+
+- A save reaches the drive about 5 seconds after typing starts; other people's changes are read every 3 seconds and whenever the deal list loads.
+- A save is never written over a newer one: if someone else saved in the meantime, this Mac's version is kept as `deal.conflict-<user>-<time>.json` in the deal's folder and the app asks for a reload.
+- Without Google Drive running, edits wait on the Mac and are written when it is back.
+- Set up once per team: `python3 src/server.py --init-drive "<shared drive folder>"`. Move a pre-drive data folder into it: `python3 src/server.py --migrate-from "<folder with deals.sqlite>" [--dry-run] [--with-mail]` (deals already on the drive are skipped, so it can be run again; `--with-mail` also loads that folder's Gmail cache into this Mac's index).
+
+New deals drafted by Claude go into `Inbox/` on the shared drive – format in `docs/intake.md`.
 
 ## Gmail
 

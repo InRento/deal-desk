@@ -1,20 +1,21 @@
 Deal Desk – InRento's underwriting app (test version)
 
-Needs a Mac with Apple Silicon (M1 or later). Nothing else to install.
+Needs a Mac with Apple Silicon (M1 or later) and Google Drive for Desktop, signed in with your InRento account,
+with the "Deal desk" shared drive visible in Finder (Google Drive > Shared drives > Deal desk).
 
 1. Unzip, then drag "Deal Desk.app" to your Applications folder (or the Desktop).
 2. Double-click it. macOS will say it cannot check the app because it is not from the App Store.
    Click Done, open System Settings > Privacy & Security, scroll down and click "Open Anyway" next to Deal Desk,
    then confirm with your password. (Older macOS: right-click the app > Open > Open.)
    This is needed once.
-3. The app opens in your browser at http://127.0.0.1:8765. It runs only on your Mac; nothing is sent anywhere.
-   The first start takes a few seconds while it unpacks.
+3. The app opens in your browser at http://127.0.0.1:8765. The first start takes a few seconds while it unpacks.
 
-Your deals are stored in the folder "Deal Desk" in your home folder (deals.sqlite, with daily backups).
-It starts empty: click "New project" to begin.
+Deals are kept in the "Deal desk" shared drive, so everyone on the team sees the same deals. Google Drive for Desktop
+does the syncing; the app itself only reads and writes files in that folder. Your Mac keeps a local index, your Gmail
+cache and a log in the folder "Deal Desk" in your home folder.
 
 Gmail (optional): Home page > Email settings, with a Gmail app password. Read-only – the app never changes your mailbox,
 and the password is kept in the macOS Keychain.
 
 To close it, just close the browser tab; it stops by itself 20 minutes later.
-To remove it: delete the app and the "Deal Desk" folder in your home folder.
+To remove it: delete the app and the "Deal Desk" folder in your home folder (the deals stay on the shared drive).
