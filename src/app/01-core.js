@@ -229,6 +229,7 @@ function topBar() {
 function cls(v, good, bad) { if (v == null) return ''; return good(v) ? 'good' : bad(v) ? 'bad' : ''; }
 function renderKpis() {
   const el = $('#kpis'); if (!el || !S.model) return;
+  el.style.display = S.tab === 'deal' ? 'none' : ''; // the Deal tab shows its own results
   const s = S.model.summary, r = S.model.r;
   const k = (l, v, c = '', tr = '') => `<div class="kpi"><div class="l">${l}</div><div class="v ${c}"${tr ? ` data-tr="m:${tr}"` : ''}>${v}</div></div>`;
   el.innerHTML = k(r.tranchesOn ? 'Facility' : 'Loan', money(s.facility), '', 'facility') + k('Rate · term', `${pctf(r.rate, 2)} · ${r.termBase}${r.extOn ? '+' + r.extMonths : ''} m`) +

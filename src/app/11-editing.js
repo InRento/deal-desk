@@ -55,12 +55,12 @@ document.addEventListener('keydown', (e) => {
   if (e.target.id === 'newtodo' && e.key === 'Enter' && e.target.value.trim()) {
     cur().todos.push({ text: e.target.value.trim(), done: false, category: 'Open item', due: '' }); scheduleSave(S.curId); renderTab(); setTimeout(() => $('#newtodo')?.focus(), 0);
   }
-  if (e.key === 'Enter' && e.target.closest && e.target.closest('tr[data-open]')) go('project', e.target.closest('tr[data-open]').dataset.open, 'overview');
+  if (e.key === 'Enter' && e.target.closest && e.target.closest('tr[data-open]')) go('project', e.target.closest('tr[data-open]').dataset.open, 'deal');
 });
 document.addEventListener('click', async (e) => {
   const t = e.target.closest('[data-act],[data-tab],[data-open],[data-filter],[data-cf]'); if (!t) return;
   if (t.dataset.tab) { S.tab = t.dataset.tab; S.confirmDel = false; renderTab(); return; }
-  if (t.dataset.open) return go('project', t.dataset.open, 'overview');
+  if (t.dataset.open) return go('project', t.dataset.open, 'deal');
   if (t.dataset.filter) { S.filter = t.dataset.filter; return renderHome(); }
   if (t.dataset.cf) { S.cfMode = t.dataset.cf; return renderTab(); }
   const p = cur(), a = t.dataset.act, i = t.dataset.i != null && /^\d+$/.test(t.dataset.i) ? +t.dataset.i : t.dataset.i;

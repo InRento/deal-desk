@@ -14,7 +14,7 @@ function renderTab() {
     document.querySelectorAll('#tabs .tab').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.tab === S.tab)));
     return;
   }
-  const f = { overview: tabOverview, inputs: tabInputs, ops: tabOps, assets: tabAssets, adjust: tabAdjust, summary: tabSummary, cashflow: tabCashflow, sens: tabSens, versions: tabVersions }[S.tab] || tabOverview;
+  const f = { deal: tabDeal, overview: tabOverview, inputs: tabInputs, ops: tabOps, assets: tabAssets, adjust: tabAdjust, summary: tabSummary, cashflow: tabCashflow, sens: tabSens, versions: tabVersions }[S.tab] || tabOverview;
   const y = window.scrollY;
   el.innerHTML = (S.modelErr ? `<div class="banner">The model could not be calculated: ${esc(S.modelErr)}</div>` : '') + f();
   refreshOutputs(); applyReadOnly();
