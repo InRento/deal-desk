@@ -1,4 +1,4 @@
-# Deal Desk – changes after v2.8 (current: v3.23.0, 5 Nov 2026)
+# Deal Desk – changes after v2.8 (current: v3.24.0, 5 Nov 2026)
 
 - v2.9 Currency view: PLN/EUR switch (Summary, Cash flow, Sensitivity, KPIs on those tabs, deck, Excel export); inputs stay in project currency. fxRate/fxDate per project, "Get today's ECB rate" (server /api/fx, urllib then /usr/bin/curl fallback). €5m check in Model check (warn > €5m, note > €4.5m, warn if no rate). app_i.js.
 - v3.0 Documents panel (app_j.js): right-side resizable panel; Word via mammoth 1.8.0 (inlined) with section navigator + search, Excel sheet tabs + search, PDF with #page jump, images; document type in documents.note; import `_documents` from ~/Deal Desk/import/<folder>; source tags in inputs.sources (blue doc / amber assumed / grey edited) with Open/Confirm chip; "N assumed values to confirm" (v3.2.1: "Confirm all" fix button).
@@ -78,3 +78,5 @@ Source of truth: ~/Desktop/Underwriting tool/deal-desk (from v3.11; v2 is retire
   - Guard: engine unchanged. App snapshot re-recorded for the deal and inputs views of the 4 PLN test deals: every diff only adds the currency line and the 'PLN' unit labels – no line removed, no number moved. ui_test: Deal results in EUR at rate 4, Deal inputs stay in PLN with the note.
 - v3.23.0 (5 Nov 2026) Deal tab: main benefits and risks as two lists under the results (Tautvydas: the CEO always asks for them). Text from Overview → Committee deck (`inputs.benefits` / `inputs.risks`), one point per line, leading dashes/bullets/numbers dropped; 'Edit' jumps to Overview; 'Not written yet.' when empty.
   - Guard: engine unchanged. App snapshot: the 15 Deal views re-recorded – only added lines (the new card), none removed.
+- v3.24.0 (5 Nov 2026) Home list (Tautvydas: people clicked the stage instead of the project; the stage was shown twice; the Checks column worried non-analysts). Each stage is a plain heading with a coloured dot and count, its projects in a box below; the whole row opens the project (hover, › at the end). Stage column removed (the stage is changed on Overview → Pipeline) and Checks column removed (model checks stay inside each deal).
+  - Guard: engine and app snapshot unchanged (the home page is not in the snapshot). lock_ui_test: the two checks on the home stage select replaced by 'Home has no stage column'.
