@@ -1,4 +1,4 @@
-# How Claude drafts a new deal or adds email material
+# How Claude drafts a new deal
 
 **Workflow:** Tautvydas translates the documents himself and gives Claude the translated files – usually the teaser or business plan, the appraisal and the financial statements – plus anything he states in chat (e.g. preliminary loan terms). Claude drafts the project as JSON; the app makes no AI or API calls.
 
@@ -10,16 +10,8 @@
 - Link a source tag to its file with `file` (path inside the deal's Documents): `{"doc": "Appraisal Ober-Haus", "file": "Appraisal/appraisal_LT.pdf", "loc": "p.12"}` – “Open” on the field's chip then opens that file.
 - Source tags in `inputs.sources`, keyed by the field's data-k path:
   `{"inputs.loan": {"doc": "Business plan", "loc": "p.3", "note": "EUR 2.5m requested"}, "assets.0.market": {"doc": "Appraisal AB26-0430-07N", "loc": "p.12", "note": "land plot"}, "inputs.term": {"doc": "App default", "note": "not given", "assumed": true}}`.
-  `doc: "Email"` with `loc` = a text snippet points to an email: "Open" finds the Gmail thread in the project's label containing the snippet.
-- Also set: `inputs.dealType` (units / operating / rental / bridge / custom); `fxRate` + `fxDate` for non-EUR deals; `status` = a pipeline stage (New deal, Initial analysis, Underwriting, Turned in, Rejected, Funded, Realised); `nextAction`, `nextOwner`, `nextDue`; open items in `todos` with optional `category`, `from` (requested from) and `askedOn`; `inputs.gmailLabel` when the label name differs from the project name.
+- Also set: `inputs.dealType` (units / operating / rental / bridge / custom); `fxRate` + `fxDate` for non-EUR deals; `status` = a pipeline stage (New deal, Initial analysis, Underwriting, Turned in, Rejected, Funded, Realised); `nextAction`, `nextOwner`, `nextDue`; open items in `todos` with optional `category`, `from` (requested from) and `askedOn`.
 
 ## Adding to an existing project without touching the model
 - `_appendVersions: true` + `_versions: [{label, data}]` – adds alternative structures as versions.
-- `_appendEmails: true` – summaries of email threads:
-  ```json
-  {"id": "n7-vilnius", "_appendEmails": true, "inputs": {},
-   "_emailSummary": {"text": "…", "date": "2026-10-23"},
-   "_todos": [{"text": "Final appraisal report", "category": "Document request", "from": "Borrower", "askedOn": "2026-10-16"}],
-   "_sources": {"inputs.term": {"doc": "Email", "loc": "presale contracts signed", "note": "presales confirmed by broker"}}}
-  ```
-  The summary shows at the top of the Emails tab; open items with the same text are skipped (also within one file); `_sources` are merged into the project's source tags. `inputs` must be present (empty is fine).
+- Email material (`_appendEmails`, email summaries) is no longer imported (v3.25): a file like that for an existing deal is skipped.

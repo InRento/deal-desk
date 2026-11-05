@@ -9,7 +9,7 @@ Read README.md first. This file is how the code is put together and the rules fo
 - Every editable field has `data-k="<path>"` (`inputs.rate`, `assets.3.salePrice`, `scenarios.2.deck`). `onEdit` (11-editing.js) writes the value into the project, schedules the save (`scheduleSave`) and recalculates. Selects and checkboxes re-render the tab; text fields do not.
 - Buttons use `data-act="…"`; the main switch is in 11-editing.js, feature-specific actions sit in their own file.
 - Locks: only the person holding a deal's lock can change it; an unlocked deal is read-only for everyone. The server refuses every write without the lock (HTTP 423) – the app's read-only mode is only the visible part. Anything that changes a deal must go through `scheduleSave` (which reverts edits on a read-only deal) or a server route that checks `edit_refusal`.
-- Storage: deals live in the shared Google Drive folder (`Deals/<name> (<id>)/deal.json` + `versions/` + `activity/`); the server's SQLite database is only this Mac's index of it plus the Gmail cache. There is no local-only mode. Tests always pass `DEALDESK_DRIVE` (a temporary folder) – without it the server finds the real shared drive on this Mac.
+- Storage: deals live in the shared Google Drive folder (`Deals/<name> (<id>)/deal.json` + `versions/` + `activity/`); the server's SQLite database is only this Mac's index of it. There is no local-only mode. Tests always pass `DEALDESK_DRIVE` (a temporary folder) – without it the server finds the real shared drive on this Mac.
 - State: `S` (01-core.js). `cur()` is the open project, `S.model` the engine result shown (EUR view when switched), `S.modelOrig` the result in the project's own currency (the model check always uses this one).
 - **One definition per function.** Do not wrap or reassign an existing function (`const _x = x; x = function …`); extend the original instead. v3.11 removed 26 such wrappers.
 
@@ -32,7 +32,6 @@ Read README.md first. This file is how the code is put together and the rules fo
 | 14-currency | PLN/EUR view (`mp()` converts the project; `OUT_TABS` = tabs whose results follow the switch: Deal, Summary, Cash flow, Sensitivity), ECB rate, €5m crowdfunding check, `ccyNote` (currency and rate line on Inputs and Deal) and `moneyUnit` (currency code next to money inputs on non-EUR deals) |
 | 15-sources | source tags on drafted values (document / assumed / changed), "N assumed values to confirm" |
 | 16-versions | live versions, switcher, side-by-side comparison, change notes |
-| 17-email | Gmail settings, Emails tab, conversation panel |
 | 18-deck | committee deck (2 slides): data (`committeeData`, `deckGrid`, `stressHeadline`), one layout drawn twice (`deckWriter`: PptxGenJS and HTML for preview/PDF); logo and fonts in 18-deck-assets |
 | 20-judgement | decision log: pre-mortem, snapshot at the decision, post-mortem; Home → Decisions |
 | 19-trace | "How it is calculated" panel: numbers tagged `data-tr="c:key:period"`, `"m:summaryKey"` or `"y:key:year"`; formulas come from `src/trace.js` |
@@ -51,7 +50,7 @@ Read README.md first. This file is how the code is put together and the rules fo
 
 ## Rules from the owner (Tautvydas)
 - This is a modelling tool for InRento's credit analysts, not a consumer app. Modelling (accuracy, speed of building and stress-testing a deal) comes first; polish, onboarding and packaging come after.
-- No AI or API calls inside the app. Gmail stays read-only; the password only in the Keychain.
+- No AI or API calls inside the app. No email integration (Gmail tracking was removed in v3.25 at Tautvydas's request).
 - Construction / renovation (v3.13) is off unless `constrOn`; engine `worksPlan()` drives spend, progress-linked tranches and collateral credit. Keep results of deals without construction identical.
 - Never invent numbers for a deal: only what the documents or he state; anything assumed is tagged `assumed: true`.
 - Committee deck: two slides only – the deal (description, loan, LTV, price per m²) and the stress test (answer in one sentence + 4 × 4 table). Look of InRento's investment decks (Inter, navy/green, white cards), no footers. It has to be clear at a glance.
@@ -72,7 +71,7 @@ Read README.md first. This file is how the code is put together and the rules fo
 - **Engine guard** (`tests/engine_test.js`): the confirmed figures of Skýra, Ustroń, Noa and M23 (reconciled once against the analysts' models) must still come out, and every result of every deal in `tests/deals/` must equal `tests/expected/engine.json`.
 - **App guard** (`tests/app_snapshot.js`, needs Playwright): every tab, the committee deck and the Excel export of every test deal must equal `tests/expected/app.json` (clock fixed at 24 Oct 2026).
 - A guard failure means a number moved. Fix it, or – when the change is intended – re-record with `--update` and write in docs/CHANGELOG.md which numbers changed and why. Never re-record just to make a failure go away.
-- `tests/server_test.py` covers storage, inbox, backups, the origin guard and the Gmail read-only rule; `tests/drive_test.py` runs two servers on one shared folder (saves across Macs, stale copies, rev conflicts, versions, deletes, inbox, drive missing); `tests/ui_test.js` builds a fictional deal through the browser.
+- `tests/server_test.py` covers storage, inbox, backups and the origin guard; `tests/drive_test.py` runs two servers on one shared folder (saves across Macs, stale copies, rev conflicts, versions, deletes, inbox, drive missing); `tests/ui_test.js` builds a fictional deal through the browser.
 - `data/` (gitignored) holds a copy of Tautvydas's pre-drive `~/Deal Desk` – migration source for development. Read it only through copies; never modify or commit it.
 - `tests/deals/` holds real deals: keep this folder private (release.sh only copies dist/ to the drive).
 - Never run `src/server.py` against the real shared drive while developing: set `DEALDESK_DRIVE` to a test folder (see README → Development). Tests always do.

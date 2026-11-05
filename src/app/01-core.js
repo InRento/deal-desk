@@ -122,7 +122,6 @@ async function initStore() {
     try { S.info = await api('GET', '/api/info'); } catch {}
   } catch (e) { S.store = 'offline'; S.storeErr = /shared Deal Desk folder/.test(e.message) ? e.message : null; }
   render();
-  mailBoot();
 }
 function scheduleSave(id, delay = 600) {
   if (!canEdit(id)) return readOnlyRevert(id);
@@ -173,7 +172,7 @@ let toastT; function toast(msg) { let t = $('#toast'); if (!t) { t = document.cr
 
 // ---------- navigation ----------
 function go(view, id, tab) {
-  if (view !== 'project' || id !== S.curId) { closeMail(); TR.stack = []; renderTrace(); }
+  if (view !== 'project' || id !== S.curId) { TR.stack = []; renderTrace(); }
   if (id !== S.curId) S.cmpSel = null;
   S.view = view; S.curId = id || null; S.confirmDel = false; S.versions = null; S.openLine = null;
   if (tab) S.tab = tab;

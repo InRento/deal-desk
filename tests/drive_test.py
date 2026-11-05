@@ -41,7 +41,7 @@ class Mac:
         os.makedirs(self.data, exist_ok=True)
         self.port = free_port()
         self.log = open(os.path.join(tmp, name + ".log"), "a")
-        env = dict(os.environ, DEALDESK_DATA=self.data, DEALDESK_DRIVE=drive, DEALDESK_USER=user, DEALDESK_FAKE_KEYCHAIN="1",
+        env = dict(os.environ, DEALDESK_DATA=self.data, DEALDESK_DRIVE=drive, DEALDESK_USER=user,
                    DEALDESK_FLUSH_SECONDS=flush, DEALDESK_SYNC_SECONDS=every, DEALDESK_LOCK_SETTLE="0.3", DEALDESK_NO_OPEN="1")
         self.proc = subprocess.Popen([sys.executable, SERVER, "--port", str(self.port), "--no-browser"], env=env, stdout=self.log, stderr=subprocess.STDOUT)
         for _ in range(80):
@@ -239,16 +239,17 @@ class DriveTest(unittest.TestCase):
         self.assertEqual(self.disk("t7")["name"], "From the inbox")
         self.assertIn("t7", self.b.projects())
         self.assertEqual(len(self.b.call("GET", "/api/projects/t7/versions")), 1)
-        # email material for a deal someone else holds waits in the inbox until the lock is released
+        # a new version for a deal someone else holds waits in the inbox until the lock is released
         self.assertTrue(self.b.lock("t7")["ok"])
         self.a.sync()
-        with open(os.path.join(inbox, "2026-11-04b-t7-emails.json"), "w") as fh:
-            json.dump({"id": "t7", "inputs": {}, "_appendEmails": True, "_todos": [{"text": "Chase the valuer"}]}, fh)
+        with open(os.path.join(inbox, "2026-11-04b-t7-version.json"), "w") as fh:
+            json.dump({"id": "t7", "inputs": {}, "_appendVersions": True, "_versions": [{"label": "Lower loan", "data": {"inputs": {"loan": "1"}}}]}, fh)
         self.a.projects()
-        self.assertTrue(os.path.exists(os.path.join(inbox, "2026-11-04b-t7-emails.json")), "waits while B holds the lock")
+        self.assertTrue(os.path.exists(os.path.join(inbox, "2026-11-04b-t7-version.json")), "waits while B holds the lock")
         self.b.unlock("t7")
-        self.assertIn("Chase the valuer", [t["text"] for t in self.a.projects()["t7"]["todos"]])
-        self.assertFalse(os.path.exists(os.path.join(inbox, "2026-11-04b-t7-emails.json")))
+        self.a.projects()
+        self.assertIn("Lower loan", [v["label"] for v in self.a.call("GET", "/api/projects/t7/versions")])
+        self.assertFalse(os.path.exists(os.path.join(inbox, "2026-11-04b-t7-version.json")))
 
     def test_08_every_test_deal_survives_the_drive(self):
         """The whole project – every input, asset, scenario, line and decision log – comes back identical on the other

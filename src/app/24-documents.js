@@ -1,7 +1,7 @@
 // Documents tab: the files in the deal's folder on the shared drive (Deals/<deal>/Documents/<category>/). Adding files
 // needs no lock – they never touch the deal itself. Files put there in Finder or Google Drive show up too.
 const DS = { list: {}, cats: ['Teaser, business plan', 'Appraisal', 'Financial statements', 'Legal', 'Photos', 'Other'], cat: 'Other', busy: 0 };
-{ const vi = TABS.findIndex((t) => t[0] === 'emails'); TABS.splice(vi < 0 ? TABS.length : vi, 0, ['docs', 'Documents']); }
+{ const vi = TABS.findIndex((t) => t[0] === 'versions'); TABS.splice(vi < 0 ? TABS.length : vi, 0, ['docs', 'Documents']); }
 
 const fsize = (n) => (n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : n >= 1024 ? Math.round(n / 1024) + ' KB' : n + ' B');
 async function loadDocs(id) {

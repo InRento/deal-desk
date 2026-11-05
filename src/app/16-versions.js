@@ -30,9 +30,9 @@ async function vSwitch(vid) {
   await loadSide();
   const v = vById(vid); if (!v) { toast('Version not found'); return; }
   const data = normalise(clone(v.data)); data.createdAt = p.createdAt; delete data.id; data.inputs.activeVersion = String(vid);
-  const keep = DEAL_LEVEL(p); // stage, next action, open items, decision log, Gmail label, deck description, benefits and risks belong to the deal, not the version
+  const keep = DEAL_LEVEL(p); // stage, next action, open items, decision log, deck description, benefits and risks belong to the deal, not the version
   Object.assign(data, { status: keep.status, nextAction: keep.nextAction, nextOwner: keep.nextOwner, nextDue: keep.nextDue, todos: keep.todos, judgement: keep.judgement });
-  Object.assign(data.inputs, { gmailLabel: keep.gmailLabel, benefits: keep.benefits, risks: keep.risks, deckDesc: keep.deckDesc });
+  Object.assign(data.inputs, { benefits: keep.benefits, risks: keep.risks, deckDesc: keep.deckDesc });
   S.projects[id] = data; delete UNDO[id]; undoInit(id);
   scheduleSave(id, 10); recalc(true); render();
   toast(`Now on “${v.label}”. Edits are saved into this version.`);

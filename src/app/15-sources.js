@@ -17,7 +17,7 @@ function showChip(el) {
   chipFor = k;
   chip.className = 'srcchip ' + (s.edited ? 'ed' : s.assumed ? 'as' : 'dc');
   chip.innerHTML = `<b>${s.edited ? 'Changed by you' : s.assumed ? 'Assumed' : 'From document'}</b> <span>${esc([s.doc, s.loc].filter(Boolean).join(' · '))}${s.note ? ' – ' + esc(s.note) : ''}</span>
-    ${isMailSrc(s) || s.file ? `<button class="btn sm" data-src="open">Open</button>` : ''}${s.assumed && !s.edited ? `<button class="btn sm primary" data-src="confirm">Confirm</button>` : ''}<button class="btn sm ghost" data-src="edit">Edit source</button>`;
+    ${s.file ? `<button class="btn sm" data-src="open">Open</button>` : ''}${s.assumed && !s.edited ? `<button class="btn sm primary" data-src="confirm">Confirm</button>` : ''}<button class="btn sm ghost" data-src="edit">Edit source</button>`;
   const r = el.getBoundingClientRect();
   chip.style.left = Math.max(8, Math.min(window.innerWidth - 380, r.left + window.scrollX)) + 'px'; chip.style.top = (r.bottom + window.scrollY + 4) + 'px';
 }
@@ -27,7 +27,6 @@ document.addEventListener('mousedown', (e) => {
   const s = srcOf(chipFor); if (!s) return;
   if (b.dataset.src === 'edit') { const el = document.querySelector(`[data-k="${CSS.escape(chipFor)}"]`); if (el) srcEdit(el); return; }
   if (b.dataset.src === 'open' && s.file) return openDoc(s.file, false);
-  if (b.dataset.src === 'open' && isMailSrc(s)) return openMailSnippet(s.loc || s.note || '');
   if (b.dataset.src === 'confirm') { s.assumed = false; s.confirmed = true; scheduleSave(S.curId); markSources(); const el = document.querySelector(`[data-k="${CSS.escape(chipFor)}"]`); if (el) showChip(el); recalc(true); }
 });
 document.addEventListener('input', (e) => { const k = e.target.dataset && e.target.dataset.k; if (!k) return; const s = srcOf(k); if (s && !s.edited) { s.edited = true; markSources(); } });

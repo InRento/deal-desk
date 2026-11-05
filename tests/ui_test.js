@@ -102,8 +102,8 @@ const check = (ok, what, got) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}$
     await fill('inputs.payPlan.0.pct', '10'); await fill('inputs.payPlan.0.months', '0'); await sleep(300);
     await tab('assets'); await pg.fill('[data-k="assets.0.contractDate"]', '2027-03-01'); await pg.dispatchEvent('[data-k="assets.0.contractDate"]', 'change'); await sleep(500);
     check((await text('[data-out="a-0-pays"]')).includes('10% Mar 27'), 'payment plan splits the sale into instalments', await text('[data-out="a-0-pays"]'));
-    // 10 Emails tab without Gmail
-    await tab('emails'); check((await text('#tabbody')).length > 0, 'Emails tab renders without Gmail');
+    // 10 no email tab any more
+    check(!(await pg.$('.tab[data-tab="emails"]')), 'no Emails tab');
     // 11 saved to the shared folder
     await sleep(1500); await pg.reload(); await sleep(1200);
     check((await text('#app')).includes('Test Tower, Riga'), 'project is still there after a reload');

@@ -9,8 +9,8 @@ function renderProject() {
 function renderTab() {
   const el = $('#tabbody'); if (!el) return;
   if (S.view === 'project' && cur() && !!S.modelMode !== viewEUR()) recalc(true); // results follow the currency switch
-  if (S.tab === 'emails' || S.tab === 'docs') { // these tabs have no model outputs
-    const y = window.scrollY; el.innerHTML = S.tab === 'docs' ? tabDocs() : tabEmails(); window.scrollTo(0, y);
+  if (S.tab === 'docs') { // no model outputs on this tab
+    const y = window.scrollY; el.innerHTML = tabDocs(); window.scrollTo(0, y);
     document.querySelectorAll('#tabs .tab').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.tab === S.tab)));
     return;
   }
