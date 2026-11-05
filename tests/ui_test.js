@@ -42,6 +42,13 @@ const check = (ok, what, got) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}$
     await pg.fill('[data-k="assets.0.name"]', 'Building'); await fill('assets.0.market', '2000000');
     await fill('assets.0.salePrice', '2400000'); await pg.fill('[data-k="assets.0.saleDate"]', '2027-12-15'); await pg.dispatchEvent('[data-k="assets.0.saleDate"]', 'change'); await sleep(400);
     check((await text('#kpis')).includes('50.0%'), 'LTV 50% in the KPI strip', await text('#kpis'));
+    // 3b Deal tab: the same fields as Inputs and results that follow them
+    await tab('deal');
+    check((await text('[data-out="dealres"]')).includes('50.0%'), 'Deal tab shows the LTV', await text('[data-out="dealres"]'));
+    check((await text('[data-out="dealsc"]')).includes('Base'), 'Deal tab shows the scenarios', await text('[data-out="dealsc"]'));
+    await fill('inputs.rate', '11.5'); await pg.click('body'); await sleep(400); await tab('inputs');
+    check(await pg.inputValue('[data-k="inputs.rate"]') === '11.5', 'a change on the Deal tab shows on Inputs', await pg.inputValue('[data-k="inputs.rate"]'));
+    await fill('inputs.rate', '11'); await pg.click('body'); await sleep(400);
     // 4 undo / redo
     await tab('inputs'); await fill('inputs.rate', '12'); await pg.click('body'); await sleep(1700);
     await pg.keyboard.press('Meta+z'); await sleep(400); if ((await pg.inputValue('[data-k="inputs.rate"]')) === '12') { await pg.keyboard.press('Control+z'); await sleep(400); }
