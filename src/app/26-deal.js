@@ -18,12 +18,19 @@ function tabDeal() {
     <div class="dl-cols">
       <section class="card"><h2>Proposed structure</h2><div class="sub" style="margin-bottom:10px">Change any field – the results and scenarios update at once. Same fields as on Inputs.</div>
         ${ccyNote(p)}<div class="form dl-form">${fields}</div>${tr}</section>
-      <section class="card"><h2>Results${viewEUR() ? ' <span class="sub">in EUR</span>' : ''}</h2><div data-out="dealres"></div></section>
+      <div class="stack"><section class="card"><h2>Results${viewEUR() ? ' <span class="sub">in EUR</span>' : ''}</h2><div data-out="dealres"></div></section>${dealBR(p)}</div>
     </div>
     <section class="card" style="margin-top:16px"><div class="row" style="justify-content:space-between;align-items:baseline"><h2>Scenarios${viewEUR() ? ' <span class="sub">in EUR</span>' : ''}</h2><span class="sub">Built on Sensitivity · each reruns the whole monthly cash flow</span></div><div data-out="dealsc"></div></section>`;
 }
 // the drawdown table is typed in the project currency, so its total is too
 OUT['dl-trtot'] = () => money((S.modelOrig || S.model).r.facility, baseCcy(cur()));
+// main benefits and risks: the committee-deck text from Overview, one point per line
+const brItems = (t) => String(t || '').split(/\n+/).map((x) => x.replace(/^\s*(?:[-–•*·]|\d+[.)])\s*/, '').trim()).filter(Boolean);
+function dealBR(p) {
+  const list = (t, cls) => { const l = brItems(t); return l.length ? `<ul class="dl-br ${cls}">${l.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : '<div class="sub">Not written yet.</div>'; };
+  return `<section class="card"><div class="row" style="justify-content:space-between;align-items:baseline"><h2>Benefits and risks</h2><button class="btn sm ghost" data-tab="overview" title="Written on Overview → Committee deck, one point per line">Edit</button></div>
+    <div class="dl-brcols"><div><div class="dl-h good-t">Main benefits</div>${list(p.inputs.benefits, 'good')}</div><div><div class="dl-h bad-t">Main risks</div>${list(p.inputs.risks, 'bad')}</div></div></section>`;
+}
 // cash left at maturity after repaying InRento; a bank refinancing (refinance LTV set) counts as a source, as in mgTests
 function dealAtMat(s, r) { const T = mgTests(r), refi = T.refi && s.refiMax != null ? Math.min(s.refiMax, s.owedAtExit || 0) : 0; return { v: s.cashAtMaturity + refi, refi }; }
 // outcome of one engine run in plain words – the same tests as the margin for error (mgTests)
