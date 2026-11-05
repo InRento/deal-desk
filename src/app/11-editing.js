@@ -19,7 +19,7 @@ function refreshOutputs() {
   });
   document.querySelectorAll('[data-out]').forEach((o) => { o.innerHTML = outFor(o.dataset.out); });
   document.querySelectorAll('input.in:disabled[data-k]').forEach((el) => {
-    const k = el.dataset.k.split('.').pop(); const r = S.model.r;
+    const k = el.dataset.k.split('.').pop(); const r = (S.modelOrig || S.model).r; // fields are in the project currency, also in the EUR view
     const v = { revenue: r.revenue, purchase: r.purchase, equity: r.equity }[k]; if (v != null) el.value = nf2.format(v);
   });
   const tb = $('#tabs'); if (tb) tb.querySelectorAll('.tab').forEach((b) => b.setAttribute('aria-selected', b.dataset.tab === S.tab));

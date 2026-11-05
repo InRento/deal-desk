@@ -11,17 +11,19 @@ function tabDeal() {
   const fields = DEAL_FIELDS.filter((k) => FD[k] && show[k] !== false).map((k) => fieldHTML(FD[k], i, 'inputs.')).join('');
   const tr = i.tranchesOn ? `<div class="dl-sub"><div class="dl-h">Drawdown schedule</div><div class="tblwrap"><table class="grid-in"><thead><tr><th>Date</th><th class="n">Amount</th><th>Condition</th></tr></thead><tbody>
     ${p.tranches.map((t, k) => `<tr><td>${dateIn(`tranches.${k}.date`, t.date)}</td><td>${inp(`tranches.${k}.amount`, t.amount, 'money')}</td><td class="sub">${esc(t.label || '')}</td></tr>`).join('') || '<tr><td colspan="3" class="sub">No tranches yet.</td></tr>'}
-    </tbody><tfoot><tr><td>Facility</td><td class="n" data-out="tr-total"></td><td></td></tr></tfoot></table></div></div>` : '';
+    </tbody><tfoot><tr><td>Facility</td><td class="n" data-out="dl-trtot"></td><td></td></tr></tfoot></table></div></div>` : '';
   const desc = String(i.deckDesc || '').trim();
   return `<div class="dl-head"><div class="dl-sum">${desc ? esc(desc) : '<span class="sub">No description yet – add it on Overview → Committee deck.</span>'}</div>
       <div class="sub">${esc([p.borrower, p.projectType, typeLabel(typeOf(p))].filter(Boolean).join(' · '))}</div></div>
     <div class="dl-cols">
       <section class="card"><h2>Proposed structure</h2><div class="sub" style="margin-bottom:10px">Change any field – the results and scenarios update at once. Same fields as on Inputs.</div>
-        <div class="form dl-form">${fields}</div>${tr}</section>
-      <section class="card"><h2>Results</h2><div data-out="dealres"></div></section>
+        ${ccyNote(p)}<div class="form dl-form">${fields}</div>${tr}</section>
+      <section class="card"><h2>Results${viewEUR() ? ' <span class="sub">in EUR</span>' : ''}</h2><div data-out="dealres"></div></section>
     </div>
-    <section class="card" style="margin-top:16px"><div class="row" style="justify-content:space-between;align-items:baseline"><h2>Scenarios</h2><span class="sub">Built on Sensitivity · each reruns the whole monthly cash flow</span></div><div data-out="dealsc"></div></section>`;
+    <section class="card" style="margin-top:16px"><div class="row" style="justify-content:space-between;align-items:baseline"><h2>Scenarios${viewEUR() ? ' <span class="sub">in EUR</span>' : ''}</h2><span class="sub">Built on Sensitivity · each reruns the whole monthly cash flow</span></div><div data-out="dealsc"></div></section>`;
 }
+// the drawdown table is typed in the project currency, so its total is too
+OUT['dl-trtot'] = () => money((S.modelOrig || S.model).r.facility, baseCcy(cur()));
 // cash left at maturity after repaying InRento; a bank refinancing (refinance LTV set) counts as a source, as in mgTests
 function dealAtMat(s, r) { const T = mgTests(r), refi = T.refi && s.refiMax != null ? Math.min(s.refiMax, s.owedAtExit || 0) : 0; return { v: s.cashAtMaturity + refi, refi }; }
 // outcome of one engine run in plain words – the same tests as the margin for error (mgTests)

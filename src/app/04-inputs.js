@@ -84,7 +84,7 @@ function fieldHTML(f, obj, base) {
   else if (f.kind === 'date') ctl = dateIn(path, val);
   else if (f.kind === 'months') return `<div class="f fm"><span class="lbl">${esc(f.label)}</span>${monthChips(path, val, f.label)}${f.help ? `<span class="help">${esc(f.help)}</span>` : ''}</div>`;
   else ctl = `<input class="in" id="${id}" data-k="${path}" data-kind="${f.kind}" inputmode="decimal" autocomplete="off" value="${esc(val)}" ${dis ? 'disabled' : ''}>`;
-  const unit = f.kind === 'pct' ? '%' : f.kind === 'money' ? '' : (f.unit || '');
+  const unit = f.kind === 'pct' ? '%' : f.kind === 'money' ? moneyUnit() : (f.unit || '');
   return `<label class="f" for="${id}"><span class="lbl">${esc(f.label)}</span><span class="ctl">${ctl}<span class="unit">${unit}</span></span>${['pct', 'money', 'num', 'int'].includes(f.kind) ? `<span class="hint" data-hint="${id}"></span>` : ''}${f.help ? `<span class="help">${esc(f.help)}</span>` : ''}</label>`;
 }
 const card = ([n, t, fs], i) => `<div class="card"><h2 style="margin-bottom:8px"><span class="secnum">${n}</span>${esc(t)}</h2><div class="form">${fs.map((f) => fieldHTML(f, i, 'inputs.')).join('')}</div>${n === '1' ? fxButton(i) : ''}</div>`;
@@ -214,7 +214,7 @@ function tabInputsTyped() {
   };
   const shown = IN_LAYOUT.filter((x) => x.id !== 'ops' || opsOn), hidden = IN_LAYOUT.filter((x) => !shown.includes(x));
   const nav = shown.map((x) => `<a href="#iq-${x.id}" data-act="iq-jump" data-s="${x.id}">${esc(x.t)}</a>`).join('');
-  return `<div class="row iq-top"><div class="sub" title="Amounts accept sums like 17000/12. Percentages in percent (8.5 = 8.5%). Enter moves to the next field. Right-click a field to note its source.">Yellow cells are inputs · 8.5 = 8.5%</div>
+  return `${ccyNote(p)}<div class="row iq-top"><div class="sub" title="Amounts accept sums like 17000/12. Percentages in percent (8.5 = 8.5%). Enter moves to the next field. Right-click a field to note its source.">Yellow cells are inputs · 8.5 = 8.5%</div>
     <div class="row" style="gap:14px">${typeSelect(p)}<label class="row" style="gap:6px">${chk('inputs.showAll', i.showAll, 'Show all inputs')}<span class="sub">Show all inputs</span></label></div></div>
   <div class="iq">
     <div class="iq-main">${shown.map(sec).join('')}

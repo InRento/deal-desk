@@ -93,6 +93,9 @@ const check = (ok, what, got) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}$
     await tab('overview'); await tab('inputs'); await fill('inputs.fxRate', '4'); await sleep(300);
     await tab('summary'); await pg.click('[data-act="ccy"][data-v="EUR"]'); await sleep(500);
     check((await text('#kpis')).includes('€250,000'), 'EUR view converts PLN 1,000,000 at 4', await text('#kpis'));
+    await tab('deal');
+    check((await text('[data-out="dealres"]')).includes('€250,000'), 'Deal tab results follow the EUR view', await text('[data-out="dealres"]'));
+    check(await pg.inputValue('[data-k="inputs.loan"]') === '1000000' && (await text('.ccynote')).includes('entered in PLN'), 'Deal tab inputs stay in PLN and say so', await text('.ccynote'));
     await pg.click('[data-act="ccy"][data-v="orig"]'); await sleep(300);
     // 9b payment plan: 10% at the contract, the rest at the deed
     await tab('inputs'); await pg.click('[data-act="add-pay"]'); await sleep(300);
