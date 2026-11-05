@@ -471,3 +471,21 @@ table.docs tr.grp th{text-align:left;font-weight:600;padding-top:14px}
 .dl-brcols .good-t{color:var(--good)}.dl-brcols .bad-t{color:var(--bad)}
 .dl-br{list-style:none;margin:0;padding:0}.dl-br li{position:relative;padding:5px 0 5px 18px;line-height:1.45;border-bottom:1px dashed var(--line)}.dl-br li:last-child{border-bottom:0}
 .dl-br li::before{position:absolute;left:0;top:5px;font-weight:700}.dl-br.good li::before{content:"+";color:var(--good)}.dl-br.bad li::before{content:"−";color:var(--bad)}
+/* Home list (v3.24): each stage is a heading with its projects in a box below; the whole row opens the project */
+.pipewrap{border:0;background:none;overflow-x:auto}
+table.pipe{border-collapse:separate;border-spacing:0}
+table.pipe thead th{background:none;border:0;padding-bottom:4px}
+table.pipe tr.grp th{background:none;border:0;padding:22px 0 8px;font-size:13px}
+table.pipe tbody:first-of-type tr.grp th{padding-top:6px}
+table.pipe .grph{font-weight:600;font-size:14px;background:none;padding:0;color:var(--ink)}
+table.pipe .grph::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:8px;vertical-align:1px;background:var(--ink-3)}
+table.pipe .grph.st-Initial::before{background:#8b6fd6}table.pipe .grph.st-Underwriting::before{background:var(--accent)}table.pipe .grph.st-Turned::before{background:var(--warn)}
+table.pipe .grph.st-Rejected::before{background:var(--bad)}table.pipe .grph.st-Funded::before{background:var(--good)}
+table.pipe tbody tr[data-open] td{background:var(--surface);border-top:1px solid var(--line);padding-top:12px;padding-bottom:12px}
+table.pipe tbody tr[data-open] td:first-child{border-left:1px solid var(--line);padding-left:14px}
+table.pipe tbody tr[data-open] td:last-child{border-right:1px solid var(--line)}
+table.pipe tbody tr:last-child td{border-bottom:1px solid var(--line)}
+table.pipe tbody tr.grp+tr td:first-child{border-top-left-radius:8px}table.pipe tbody tr.grp+tr td:last-child{border-top-right-radius:8px}
+table.pipe tbody tr:last-child td:first-child{border-bottom-left-radius:8px}table.pipe tbody tr:last-child td:last-child{border-bottom-right-radius:8px}
+table.pipe tbody tr[data-open]:hover td{background:var(--surface-2)}
+table.pipe td.go{width:24px;color:var(--ink-3);font-size:18px;text-align:right;padding-right:14px}table.pipe tbody tr[data-open]:hover td.go{color:var(--accent)}

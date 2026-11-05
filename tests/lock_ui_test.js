@@ -49,8 +49,7 @@ const check = (ok, what, got) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}$
     const home = (await lukas.textContent('table.pipe')).replace(/\s+/g, ' ');
     check(/Test new build, Kaunas\s*Tautvydas/.test(home), 'Home shows Tautvydas holds Test new build', home.slice(0, 200));
     check(/Test instalments, Vilnius\s*You/.test(home), 'Home shows Lukas holds his own deal');
-    check(await lukas.$eval('select[data-id="test-newbuild"]', (s) => s.disabled), 'stage cannot be changed on a deal someone else holds');
-    check(!(await lukas.$eval('select[data-id="test-instalments"]', (s) => s.disabled)), 'stage can be changed on my own deal');
+    check(!(await lukas.$('table.pipe select')), 'Home has no stage column – the stage is changed on the deal (Overview)');
     await shot(lukas, '1-home-badges', await lukas.$eval('table.pipe', (t) => { const r = t.getBoundingClientRect(); return { x: 0, y: Math.max(0, r.top + window.scrollY - 70), width: 1440, height: r.height + 80 }; }));
     // a deal Tautvydas holds: read-only for Lukas
     await open(lukas, 'test-newbuild'); await lukas.click('.tab[data-tab="inputs"]'); await sleep(400);
