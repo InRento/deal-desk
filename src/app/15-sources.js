@@ -1,5 +1,6 @@
 // ================= Source tags: where each drafted value came from =================
-// inputs.sources = { "<data-k path>": { doc: "file name or kind", loc: "p.12" or "section text", note: "…", file: "Appraisal/x.pdf" (in the deal's Documents), assumed: true|false, edited: true } }
+// inputs.sources = { "<data-k path>": { doc: "file name or kind", loc: "p.12" or "section text", note: "…", file: "Appraisal/x.pdf" (in the deal's Documents), url: "https://drive.google.com/…" (opens in the browser; only people with access to it see it), assumed: true|false, edited: true } }
+const srcUrl = (s) => (s && /^https?:\/\/\S+$/i.test(String(s.url || '').trim()) ? String(s.url).trim() : '');
 const srcOf = (k) => { const p = cur(); return p && p.inputs.sources && p.inputs.sources[k]; };
 function markSources() {
   const p = cur(); if (!p || !p.inputs.sources) return;
@@ -17,7 +18,7 @@ function showChip(el) {
   chipFor = k;
   chip.className = 'srcchip ' + (s.edited ? 'ed' : s.assumed ? 'as' : 'dc');
   chip.innerHTML = `<b>${s.edited ? 'Changed by you' : s.assumed ? 'Assumed' : 'From document'}</b> <span>${esc([s.doc, s.loc].filter(Boolean).join(' · '))}${s.note ? ' – ' + esc(s.note) : ''}</span>
-    ${s.file ? `<button class="btn sm" data-src="open">Open</button>` : ''}${s.assumed && !s.edited ? `<button class="btn sm primary" data-src="confirm">Confirm</button>` : ''}<button class="btn sm ghost" data-src="edit">Edit source</button>`;
+    ${s.file ? `<button class="btn sm" data-src="open">Open</button>` : ''}${srcUrl(s) ? `<button class="btn sm" data-src="link" title="${esc(srcUrl(s))}">Open link</button>` : ''}${s.assumed && !s.edited ? `<button class="btn sm primary" data-src="confirm">Confirm</button>` : ''}<button class="btn sm ghost" data-src="edit">Edit source</button>`;
   const r = el.getBoundingClientRect();
   chip.style.left = Math.max(8, Math.min(window.innerWidth - 380, r.left + window.scrollX)) + 'px'; chip.style.top = (r.bottom + window.scrollY + 4) + 'px';
 }
@@ -27,6 +28,7 @@ document.addEventListener('mousedown', (e) => {
   const s = srcOf(chipFor); if (!s) return;
   if (b.dataset.src === 'edit') { const el = document.querySelector(`[data-k="${CSS.escape(chipFor)}"]`); if (el) srcEdit(el); return; }
   if (b.dataset.src === 'open' && s.file) return openDoc(s.file, false);
+  if (b.dataset.src === 'link' && srcUrl(s)) return window.open(srcUrl(s), '_blank', 'noopener');
   if (b.dataset.src === 'confirm') { s.assumed = false; s.confirmed = true; scheduleSave(S.curId); markSources(); const el = document.querySelector(`[data-k="${CSS.escape(chipFor)}"]`); if (el) showChip(el); recalc(true); }
 });
 document.addEventListener('input', (e) => { const k = e.target.dataset && e.target.dataset.k; if (!k) return; const s = srcOf(k); if (s && !s.edited) { s.edited = true; markSources(); } });
@@ -68,6 +70,7 @@ function srcEdit(el) {
   box.innerHTML = `<div class="sehead"><b>Source</b><span class="sub">${esc(srcLabel(el))}</span></div>
     <label><span class="lbl">Document</span><input class="in" id="se-doc" list="se-docs" value="${esc(s.doc || '')}" placeholder="e.g. Appraisal Newsec LT-26-09"><datalist id="se-docs">${docs.map((d) => `<option value="${esc(d)}">`).join('')}</datalist></label>
     <label><span class="lbl">File in the deal's Documents</span>${fileSel()}</label>
+    <label><span class="lbl">Link (Google Drive or web)</span><input class="in" id="se-url" type="url" value="${esc(s.url || '')}" placeholder="paste a link – opens for anyone with access"></label>
     <label><span class="lbl">Page / location</span><input class="in" id="se-loc" value="${esc(s.loc || '')}" placeholder="e.g. p.12 or sheet Założenia B8"></label>
     <label><span class="lbl">Note</span><input class="in" id="se-note" value="${esc(s.note || '')}" placeholder="optional"></label>
     <label class="sechk"><input type="checkbox" id="se-as" ${s.assumed ? 'checked' : ''}> Assumed – still to confirm</label>
@@ -84,9 +87,10 @@ function srcEdit(el) {
   if ($('#se-del')) $('#se-del').onclick = () => { delete p.inputs.sources[k]; done(); toast('Source removed'); };
   $('#se-save').onclick = () => {
     const file = $('#se-file') ? $('#se-file').value : '';
-    const doc = $('#se-doc').value.trim() || (file ? file.split('/').pop().replace(/\.[^.]+$/, '') : ''), loc = $('#se-loc').value.trim(), note = $('#se-note').value.trim(), assumed = $('#se-as').checked;
+    const url = $('#se-url').value.trim(), doc = $('#se-doc').value.trim() || (file ? file.split('/').pop().replace(/\.[^.]+$/, '') : ''), loc = $('#se-loc').value.trim(), note = $('#se-note').value.trim(), assumed = $('#se-as').checked;
     if (!doc && !note) { toast('Name the document (or write a note)'); return $('#se-doc').focus(); }
-    const tag = Object.assign({ doc, manual: true }, file ? { file } : {}, loc ? { loc } : {}, note ? { note } : {}, assumed ? { assumed: true } : {});
+    if (url && !srcUrl({ url })) { toast('The link must start with https://'); return $('#se-url').focus(); }
+    const tag = Object.assign({ doc, manual: true }, file ? { file } : {}, url ? { url } : {}, loc ? { loc } : {}, note ? { note } : {}, assumed ? { assumed: true } : {});
     const keys = $('#se-all') && $('#se-all').checked ? sameCol.map((x) => x.dataset.k) : [k];
     for (const key of keys) p.inputs.sources[key] = Object.assign({}, tag);
     done(); toast(keys.length > 1 ? `Source set on ${keys.length} fields` : 'Source saved');

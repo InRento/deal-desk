@@ -30,7 +30,7 @@ Read README.md first. This file is how the code is put together and the rules fo
 | 12-export | Excel, CSV and JSON export |
 | 13-paste | Paste from Excel (table cells and the header-matching dialog) |
 | 14-currency | PLN/EUR view (`mp()` converts the project; `OUT_TABS` = tabs whose results follow the switch: Deal, Summary, Cash flow, Sensitivity), ECB rate, €5m crowdfunding check, `ccyNote` (currency and rate line on Inputs and Deal) and `moneyUnit` (currency code next to money inputs on non-EUR deals) |
-| 15-sources | source tags on drafted values (document / assumed / changed), "N assumed values to confirm" |
+| 15-sources | source tags on drafted values (document / assumed / changed), "N assumed values to confirm"; a tag can carry a `file` (deal Documents) and/or a `url` (https only, e.g. a Google Drive link – "Open link" opens it in the browser) |
 | 16-versions | live versions, switcher, side-by-side comparison, change notes |
 | 18-deck | committee deck (2 slides): data (`committeeData`, `deckGrid`, `stressHeadline`), one layout drawn twice (`deckWriter`: PptxGenJS and HTML for preview/PDF); logo and fonts in 18-deck-assets |
 | 20-judgement | decision log: pre-mortem, snapshot at the decision, post-mortem; Home → Decisions |

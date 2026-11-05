@@ -86,6 +86,13 @@ const check = (ok, what, got) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}$
     // 7b source added by hand (right-click)
     await tab('inputs'); await pg.click('[data-k="inputs.rate"]', { button: 'right' }); await pg.fill('#se-doc', 'Term sheet'); await pg.fill('#se-loc', 'p.2'); await pg.click('#se-save'); await sleep(300);
     check(await pg.$eval('[data-k="inputs.rate"]', (e) => e.classList.contains('src-doc')), 'a source added by hand marks the field');
+    await pg.click('[data-k="inputs.term"]', { button: 'right' }); await pg.fill('#se-doc', 'Term sheet'); await pg.fill('#se-url', 'drive.google.com/x'); await pg.click('#se-save'); await sleep(200);
+    check(!!(await pg.$('#srcedit')), 'a link without https:// is refused');
+    await pg.fill('#se-url', 'https://drive.google.com/drive/folders/test'); await pg.click('#se-save'); await sleep(300);
+    await pg.click('body'); await pg.focus('[data-k="inputs.term"]'); await sleep(200);
+    await ctx.route('https://drive.google.com/**', (r) => r.fulfill({ body: 'drive' })); // no internet needed
+    const [popup] = await Promise.all([pg.waitForEvent('popup', { timeout: 5000 }), pg.dispatchEvent('#srcchip [data-src="link"]', 'mousedown')]);
+    check(popup.url().startsWith('https://drive.google.com/drive/folders/test'), 'Open link opens the Drive link', popup.url()); await popup.close();
     // 8 Excel
     check(/_model\.xlsx$/.test(await download('[data-act="export-xlsx"]')), 'Excel export downloads');
     // 9 currency view
