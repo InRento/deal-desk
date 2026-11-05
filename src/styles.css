@@ -466,3 +466,4 @@ table.docs tr.grp th{text-align:left;font-weight:600;padding-top:14px}
 .dl-spark .z{stroke:var(--line-2);stroke-width:1;vector-effect:non-scaling-stroke}.dl-spark .m{stroke:var(--ink-3);stroke-width:1;stroke-dasharray:3 3;vector-effect:non-scaling-stroke}
 .dl-spl{display:flex;justify-content:space-between;font-size:10.5px;color:var(--ink-3);margin:2px 0 8px}
 .dl-scn{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;font-family:var(--f-num);font-size:13px}.dl-scn .l{display:block;font-family:var(--f-ui,inherit);font-size:11px;color:var(--ink-3)}
+.ccynote{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 12px;margin:0 0 12px;border-radius:8px;background:var(--accent-soft);color:var(--ink);font-size:13px}.ccynote b{color:var(--accent)}

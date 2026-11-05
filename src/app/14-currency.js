@@ -1,8 +1,8 @@
 // ================= Currency view (original / EUR) and the €5m check =================
-// Inputs always stay in the project currency. Summary, Cash flow, Sensitivity, the KPI bar on those tabs,
+// Inputs always stay in the project currency. The Deal tab's results and scenarios, Summary, Cash flow, Sensitivity, the KPI bar on those tabs,
 // the committee deck and the Excel export can be shown in EUR: the engine then runs on a copy of the project
 // with every money field divided by the rate (percentages, dates and areas unchanged).
-const OUT_TABS = ['summary', 'cashflow', 'sens'];
+const OUT_TABS = ['deal', 'summary', 'cashflow', 'sens'];
 const baseCcy = (p) => String((p && p.inputs.currency) || 'EUR').trim().toUpperCase();
 const fxRateOf = (p) => (baseCcy(p) === 'EUR' ? 1 : E.num(p.inputs.fxRate));
 S.ccyView = 'orig';
@@ -36,7 +36,7 @@ function withView(fn) { return function (...a) { if (!fxOn()) return fn.apply(th
 function ccySwitch() {
   const p = cur(); if (!p || baseCcy(p) === 'EUR') return '';
   const b = baseCcy(p), on = S.ccyView === 'EUR';
-  return `<span class="ccyseg" role="group" aria-label="Currency of the results" title="Summary, Cash flow, Sensitivity, deck and Excel export. Inputs stay in ${esc(b)}."><button class="${on ? '' : 'on'}" data-act="ccy" data-v="orig" aria-pressed="${!on}">${esc(b)}</button><button class="${on ? 'on' : ''}" data-act="ccy" data-v="EUR" aria-pressed="${on}">EUR</button></span>`;
+  return `<span class="ccyseg" role="group" aria-label="Currency of the results" title="Results on Deal, Summary, Cash flow, Sensitivity, the deck and Excel export. Inputs stay in ${esc(b)}."><button class="${on ? '' : 'on'}" data-act="ccy" data-v="orig" aria-pressed="${!on}">${esc(b)}</button><button class="${on ? 'on' : ''}" data-act="ccy" data-v="EUR" aria-pressed="${on}">EUR</button></span>`;
 }
 async function fetchEcb(p, quiet) {
   try {
@@ -54,11 +54,19 @@ document.addEventListener('click', async (e) => {
   if (b.dataset.act === 'ccy') {
     if (b.dataset.v === 'EUR' && !(fxRateOf(p) > 0) && !(await fetchEcb(p))) { S.tab = 'inputs'; OPEN_SECS.add('1'); render(); setTimeout(() => { const el = $('[data-k="inputs.fxRate"]'); if (el) { el.scrollIntoView({ block: 'center' }); el.focus(); } }, 30); return; }
     S.ccyView = b.dataset.v; recalc(true); render();
-    if (S.ccyView === 'EUR' && !OUT_TABS.includes(S.tab)) toast('Results in EUR on Summary, Cash flow and Sensitivity. Inputs stay in ' + baseCcy(p));
+    if (S.ccyView === 'EUR' && !OUT_TABS.includes(S.tab)) toast('Results in EUR on Deal, Summary, Cash flow and Sensitivity. Inputs stay in ' + baseCcy(p));
   }
   if (b.dataset.act === 'fx-ecb') { if (await fetchEcb(p)) { recalc(true); renderTab(); } }
 });
 
+// which currency amounts are typed in, and the rate used for the EUR view (Inputs and Deal tabs)
+const moneyUnit = () => { const p = cur(), b = baseCcy(p); return b === 'EUR' ? '' : b; };
+function ccyNote(p) {
+  const b = baseCcy(p), i = p.inputs, rate = fxRateOf(p); if (b === 'EUR') return '';
+  const rt = rate > 0 ? `1 EUR = ${esc(fmtP(rate))} ${esc(b)}${i.fxDate ? ` (rate of ${esc(E.parseDate(i.fxDate) != null ? dayf(E.parseDate(i.fxDate)) : i.fxDate)})` : ' (no date)'}` : 'no EUR exchange rate set';
+  const res = !(rate > 0) ? '' : viewEUR() ? ' · results shown in <b>EUR</b> at this rate' : S.ccyView === 'EUR' ? ` · results on this tab in ${esc(b)}; Deal, Summary, Cash flow and Sensitivity show EUR` : ` · results in ${esc(b)} – switch to EUR at the top`;
+  return `<div class="ccynote"><span>Amounts are entered in <b>${esc(b)}</b> · ${rt}${res}</span>${rate > 0 ? '' : ' <button class="btn sm" data-act="fx-ecb">Get today\'s ECB rate</button>'}</div>`;
+}
 // ---- €5m check (part of the model check)
 function lintEur(p, m, add) { // the EU crowdfunding €5m limit and the exchange rate
   const s = m.summary, loan = s.facility || 0, b = baseCcy(p), rate = fxRateOf(p);
