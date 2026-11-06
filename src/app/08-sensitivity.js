@@ -46,7 +46,7 @@ OUT.room = () => {
 // ---- 2. your scenarios: static rows (names and the driver editor keep focus while typing), results refreshed per row
 function scWhat(p, j) {
   const sc = p.scenarios[j] || {};
-  return driversOf(p).map((d) => { const v = E.num(sc[d.k]); if (!v) return ''; return `${d.label} ${v > 0 ? '+' : '−'}${Math.abs(v)}${d.unit === '%' ? '%' : ' ' + (d.unit === 'mo' ? 'months' : d.unit)}`; }).filter(Boolean).join(' · ') || 'the plan as entered';
+  return driversOf(p).map((d) => { const v = E.num(sc[d.k]); if (!v) return ''; return `${d.label} ${v > 0 ? '+' : '−'}${Math.abs(v)}${d.unit === '%' ? '%' : ' ' + (d.unit === 'mo' ? 'months' : d.unit)}`; }).filter(Boolean).map((t, k) => (k ? t[0].toLowerCase() + t.slice(1) : t)).join(', ') || 'the plan as entered';
 }
 function scTable(p) {
   const rows = p.scenarios.map((s, j) => {
