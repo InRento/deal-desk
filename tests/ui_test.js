@@ -47,6 +47,9 @@ const check = (ok, what, got) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}$
     check(!(await pg.$('.dl-kvs [data-k]')) && (await text('.dl-kvs')).includes('11%'), 'Deal tab shows the structure as text', await text('.dl-kvs'));
     check((await text('[data-out="dealres"]')).includes('50.0%'), 'Deal tab shows the LTV', await text('[data-out="dealres"]'));
     check((await text('[data-out="dealsc"]')).includes('Base'), 'Deal tab shows the scenarios', await text('[data-out="dealsc"]'));
+    await pg.click('[data-act="dl-add"][data-box="listings"]'); await pg.fill('#dl-url', 'otodom.pl/pl/oferta/test'); await pg.fill('#dl-lbl', 'Unit 4'); await pg.click('[data-act="dl-save"]'); await sleep(400);
+    await tab('inputs'); await tab('deal');
+    check((await text('.dl-links')).includes('Unit 4') && (await pg.$eval('.dl-links a', (a) => a.href)) === 'https://otodom.pl/pl/oferta/test', 'a link added on the Deal tab is kept (https:// added)', await text('.dl-lbs'));
     // 3c tables work like a spreadsheet: select a block, fill down (⌘D), one value pasted into every selected cell, undo in one step
     await tab('assets'); await pg.click('[data-act="add-asset"]'); await sleep(300); await pg.click('[data-act="add-asset"]'); await sleep(400);
     const cell = async (k) => (await (await pg.$(`[data-k="${k}"]`)).evaluateHandle((e) => e.closest('td'))).asElement();
@@ -103,6 +106,7 @@ const check = (ok, what, got) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}$
     await pg.click('body'); await pg.focus('[data-k="inputs.term"]'); await sleep(200);
     await ctx.route('https://drive.google.com/**', (r) => r.fulfill({ body: 'drive' })); // no internet needed
     const [popup] = await Promise.all([pg.waitForEvent('popup', { timeout: 5000 }), pg.dispatchEvent('#srcchip [data-src="link"]', 'mousedown')]);
+    await popup.waitForURL(/drive\.google\.com/, { timeout: 5000 }).catch(() => {});
     check(popup.url().startsWith('https://drive.google.com/drive/folders/test'), 'Open link opens the Drive link', popup.url()); await popup.close();
     // 8 Excel
     check(/_model\.xlsx$/.test(await download('[data-act="export-xlsx"]')), 'Excel export downloads');

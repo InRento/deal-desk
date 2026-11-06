@@ -12,7 +12,7 @@ function nextState(p) { // 'ok' | 'missing' | 'overdue' | 'today' | 'none' (not 
 }
 
 // ---- old statuses → stages; deal-level fields survive a version switch
-const DEAL_LEVEL = (p) => ({ status: p.status, nextAction: p.nextAction, nextOwner: p.nextOwner, nextDue: p.nextDue, todos: clone(p.todos || []), judgement: clone(p.judgement || {}), benefits: p.inputs.benefits, risks: p.inputs.risks, deckDesc: p.inputs.deckDesc });
+const DEAL_LEVEL = (p) => ({ status: p.status, nextAction: p.nextAction, nextOwner: p.nextOwner, nextDue: p.nextDue, todos: clone(p.todos || []), judgement: clone(p.judgement || {}), benefits: p.inputs.benefits, risks: p.inputs.risks, deckDesc: p.inputs.deckDesc, links: clone(p.inputs.links || []) });
 
 // ---- closing an open item stamps the date
 document.addEventListener('change', (e) => {
