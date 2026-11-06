@@ -14,13 +14,13 @@ function tabDeal() {
     </tbody><tfoot><tr><td>Facility</td><td class="n" data-out="dl-trtot"></td><td></td></tr></tfoot></table></div></div>` : '';
   const desc = String(i.deckDesc || '').trim();
   return `<div class="dl-head"><div class="dl-sum">${desc ? esc(desc) : '<span class="sub">No description yet – add it on Overview → Committee deck.</span>'}</div>
-      <div class="sub">${esc([p.borrower, p.projectType, typeLabel(typeOf(p))].filter(Boolean).join(' · '))}</div></div>
+      <div class="sub">${esc([p.borrower, p.projectType, typeLabel(typeOf(p))].filter(Boolean).join(', '))}</div></div>
     <div class="dl-cols">
       <section class="card"><h2>Proposed structure</h2><div class="sub" style="margin-bottom:10px">Change any field – the results and scenarios update at once. Same fields as on Inputs.</div>
         ${ccyNote(p)}<div class="form dl-form">${fields}</div>${tr}</section>
       <div class="stack"><section class="card"><h2>Results${viewEUR() ? ' <span class="sub">in EUR</span>' : ''}</h2><div data-out="dealres"></div></section>${dealBR(p)}</div>
     </div>
-    <section class="card" style="margin-top:16px"><div class="row" style="justify-content:space-between;align-items:baseline"><h2>Scenarios${viewEUR() ? ' <span class="sub">in EUR</span>' : ''}</h2><span class="sub">Built on Sensitivity · each reruns the whole monthly cash flow</span></div><div data-out="dealsc"></div></section>`;
+    <section class="card" style="margin-top:16px"><div class="row" style="justify-content:space-between;align-items:baseline"><h2>Scenarios${viewEUR() ? ' <span class="sub">in EUR</span>' : ''}</h2><span class="sub">Built on Sensitivity. Each one reruns the full monthly cash flow.</span></div><div data-out="dealsc"></div></section>`;
 }
 // the drawdown table is typed in the project currency, so its total is too
 OUT['dl-trtot'] = () => money((S.modelOrig || S.model).r.facility, baseCcy(cur()));
@@ -46,17 +46,18 @@ OUT.dealres = () => {
   const negPre = m.rows.filter((x) => x.p > 0 && x.date < s.maturity && x.cash < -1).length;
   const lim = r.maxLTV, ltvT = (v) => (v == null ? '' : v > lim ? 'bad' : 'good');
   const it = (l, v, sub, tone = '', tr = '') => `<div class="dl-it"><div class="l">${l}</div><div class="v ${tone}"${tr ? ` data-tr="m:${tr}"` : ''}>${v}</div><div class="s">${sub}</div></div>`;
-  const pp = (v) => `${+(v * 100).toFixed(2)}%`;
+  const pk = peakOf(m, 'ltv'), a = dealAtMat(s, r), fee = feeOf(s), pp = (v) => `${+(v * 100).toFixed(2)}%`;
+  const part = r.tranchesOn && s.draw0 < s.facility - 1;
   return '<div class="dl-grid">' +
-    it(r.tranchesOn ? 'Facility' : 'Loan', money(s.facility), `${r.termBase} months · ${pp(r.rate)}${r.gain ? ` + ${pp(r.gain)}` : ''} p.a.${r.tranchesOn ? ` · ${money(s.draw0)} at drawdown` : ''}`, '', 'facility') +
-    (s.netCash < -1 ? it('Funding gap at drawdown', money(-s.netCash), 'uses at drawdown are not covered by the loan and equity', 'bad', 'netCash') : '') +
-    it('LTV at drawdown', s.mkt0 > 0 ? pctf(s.ltv0) : '–', s.mkt0 > 0 ? `full facility · ${r.tranchesOn ? `on the amount drawn ${pctf(s.draw0 / s.mkt0)} · ` : ''}max ${pctf(lim, 0)}` : 'no collateral value entered', ltvT(s.ltv0), 'ltv0') +
-    it('Forced-sale LTV at drawdown', s.fs0 > 0 ? pctf(s.ltvFs0) : '–', `after the forced-sale haircut · collateral ${money(s.fs0)}`, ltvT(s.ltvFs0), 'ltvFs0') +
-    it('Highest LTV during the loan', s.maxLtv == null ? '–' : pctf(s.maxLtv), s.maxLtvFs == null ? '' : `forced sale ${pctf(s.maxLtvFs)}`, ltvT(s.maxLtv), 'maxLtv') +
-    it('Borrower cash before maturity', s.lowCashPre < -1 ? money(s.lowCashPre) : 'Never negative', s.lowCashPre < -1 ? `lowest in ${mgMonth(s.lowCashPreDate)} · ${negPre} month${negPre === 1 ? '' : 's'} below zero` : `lowest ${money(s.lowCashPre)}${s.lowCashPreDate ? ` in ${mgMonth(s.lowCashPreDate)}` : ''}`, s.lowCashPre < -1 ? 'bad' : 'good', 'lowCashPre') +
-    (() => { const a = dealAtMat(s, r); return it('Cash at maturity', money(a.v), `after repaying InRento in full${a.refi ? ` · incl. bank refinancing ${money(a.refi)}` : ''} · maturity ${mgMonth(s.maturity)}`, a.v < -1 ? 'bad' : 'good', a.refi ? '' : 'cashAtMaturity'); })() +
-    it('Collateral buffer', s.headroom == null ? '–' : pctf(s.headroom), 'how far collateral value can fall before it no longer covers loan + interest + selling costs', s.headroom == null ? '' : s.headroom < 0.1 ? 'bad' : s.headroom < 0.2 ? 'warn' : 'good', 'headroom') +
-    it('InRento fee', money(feeOf(s)), s.facility > 0 ? `${pctf(feeOf(s) / s.facility, 1)} of the facility` : '', '', 'arrFeeAmt') + '</div>';
+    it(r.tranchesOn ? 'Facility' : 'Loan', money(s.facility), `${r.termBase} months at ${pp(r.rate)}${r.gain ? ` + ${pp(r.gain)}` : ''} a year${part ? `, ${mgK(s.draw0)} drawn at the start` : ''}`, '', 'facility') +
+    (s.netCash < -1 ? it('Funding gap at drawdown', money(-s.netCash), 'not covered by loan and equity', 'bad', 'netCash') : '') +
+    it('LTV at drawdown', s.mkt0 > 0 ? pctf(s.ltv0) : '–', s.mkt0 > 0 ? `${part ? `${pctf(s.draw0 / s.mkt0)} on the amount drawn, ` : ''}limit ${pctf(lim, 0)}` : 'no collateral value yet', ltvT(s.ltv0), 'ltv0') +
+    it('Forced-sale LTV at drawdown', s.fs0 > 0 ? pctf(s.ltvFs0) : '–', s.fs0 > 0 ? `after a ${pctf(r.haircut, 0)} haircut` : '', ltvT(s.ltvFs0), 'ltvFs0') +
+    it('Highest LTV', pk ? pctf(pk.ltv) : '–', pk ? `in ${mgMonth(pk.date)}, forced sale ${pctf(pk.ltvFs)}` : '', ltvT(pk && pk.ltv), 'maxLtv') +
+    it('Borrower cash before maturity', s.lowCashPre < -1 ? money(s.lowCashPre) : 'Never negative', s.lowCashPre < -1 ? `lowest in ${mgMonth(s.lowCashPreDate)}, ${negPre} month${negPre === 1 ? '' : 's'} below zero` : s.lowCashPreDate ? `lowest ${Math.abs(s.lowCashPre) < 1000 ? money(s.lowCashPre) : mgK(s.lowCashPre)} in ${mgMonth(s.lowCashPreDate)}` : '', s.lowCashPre < -1 ? 'bad' : 'good', 'lowCashPre') +
+    it('Cash at maturity', money(a.v), `maturity ${mgMonth(s.maturity)}${a.refi ? ', incl. bank refinancing' : ''}`, a.v < -1 ? 'bad' : 'good', a.refi ? '' : 'cashAtMaturity') +
+    it('Collateral buffer', s.headroom == null ? '–' : pctf(s.headroom), 'incl. interest and selling costs', s.headroom == null ? '' : s.headroom < 0.1 ? 'bad' : s.headroom < 0.2 ? 'warn' : 'good', 'headroom') +
+    it('InRento fee', money(fee), s.facility > 0 ? `${pctf(fee / s.facility, 1)} of the facility` : '', '', 'arrFeeAmt') + '</div>';
 };
 // borrower cash month by month until maturity (the final repayment itself is the 'cash at maturity' number)
 function dealSpark(rows, mat, tone) {
@@ -70,7 +71,7 @@ OUT.dealsc = () => {
   const base = sig(scen[0].res.summary), shown = scen.filter((x, k) => k === 0 || sig(x.res.summary) !== base), same = scen.length - shown.length;
   const card = (x) => { const s = x.res.summary, o = dealOutcome(s, r), j = scen.indexOf(x);
     return `<div class="dl-sc ${o.tone}"><div class="dl-sch"><b>${esc(x.name)}</b><span class="dl-dot ${o.tone}"></span></div><div class="sub dl-what">${esc(scWhat(p, j))}</div>
-      <div class="dl-sco ${o.tone}">${esc(o.txt)}</div>${dealSpark(x.res.rows, s.maturity, o.tone)}<div class="dl-spl"><span>Borrower cash until maturity · grey line = zero</span></div>
+      <div class="dl-sco ${o.tone}">${esc(o.txt)}</div>${dealSpark(x.res.rows, s.maturity, o.tone)}<div class="dl-spl"><span>Borrower cash until maturity (grey line is zero)</span></div>
       <div class="dl-scn"><div><span class="l">Lowest cash</span><span class="${s.lowCashPre < -1 ? 'bad' : ''}">${money(s.lowCashPre)}</span></div>${(() => { const a = dealAtMat(s, r); return `<div><span class="l">Cash at maturity${a.refi ? ' (incl. refi)' : ''}</span><span class="${a.v < -1 ? 'bad' : ''}">${money(a.v)}</span></div>`; })()}<div><span class="l">Highest LTV</span><span class="${s.maxLtv > r.maxLTV ? 'bad' : ''}">${s.maxLtv == null ? '–' : pctf(s.maxLtv)}</span></div></div></div>`; };
   return `<div class="dl-scs">${shown.map(card).join('')}</div>${same ? `<div class="sub" style="margin-top:8px">${same} scenario${same > 1 ? 's' : ''} not shown – same result as ${esc(scen[0].name)} on this deal (they move drivers the deal does not have).</div>` : ''}`;
 };
