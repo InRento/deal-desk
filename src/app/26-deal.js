@@ -46,17 +46,17 @@ OUT.dealres = () => {
   const negPre = m.rows.filter((x) => x.p > 0 && x.date < s.maturity && x.cash < -1).length;
   const lim = r.maxLTV, ltvT = (v) => (v == null ? '' : v > lim ? 'bad' : 'good');
   const it = (l, v, sub, tone = '', tr = '') => `<div class="dl-it"><div class="l">${l}</div><div class="v ${tone}"${tr ? ` data-tr="m:${tr}"` : ''}>${v}</div><div class="s">${sub}</div></div>`;
-  const pp = (v) => `${+(v * 100).toFixed(2)}%`;
+  const pk = peakOf(m, 'ltv'), a = dealAtMat(s, r), fee = feeOf(s);
   return '<div class="dl-grid">' +
-    it(r.tranchesOn ? 'Facility' : 'Loan', money(s.facility), `${r.termBase} months · ${pp(r.rate)}${r.gain ? ` + ${pp(r.gain)}` : ''} p.a.${r.tranchesOn ? ` · ${money(s.draw0)} at drawdown` : ''}`, '', 'facility') +
-    (s.netCash < -1 ? it('Funding gap at drawdown', money(-s.netCash), 'uses at drawdown are not covered by the loan and equity', 'bad', 'netCash') : '') +
-    it('LTV at drawdown', s.mkt0 > 0 ? pctf(s.ltv0) : '–', s.mkt0 > 0 ? `full facility · ${r.tranchesOn ? `on the amount drawn ${pctf(s.draw0 / s.mkt0)} · ` : ''}max ${pctf(lim, 0)}` : 'no collateral value entered', ltvT(s.ltv0), 'ltv0') +
-    it('Forced-sale LTV at drawdown', s.fs0 > 0 ? pctf(s.ltvFs0) : '–', `after the forced-sale haircut · collateral ${money(s.fs0)}`, ltvT(s.ltvFs0), 'ltvFs0') +
-    it('Highest LTV during the loan', s.maxLtv == null ? '–' : pctf(s.maxLtv), s.maxLtvFs == null ? '' : `forced sale ${pctf(s.maxLtvFs)}`, ltvT(s.maxLtv), 'maxLtv') +
-    it('Borrower cash before maturity', s.lowCashPre < -1 ? money(s.lowCashPre) : 'Never negative', s.lowCashPre < -1 ? `lowest in ${mgMonth(s.lowCashPreDate)} · ${negPre} month${negPre === 1 ? '' : 's'} below zero` : `lowest ${money(s.lowCashPre)}${s.lowCashPreDate ? ` in ${mgMonth(s.lowCashPreDate)}` : ''}`, s.lowCashPre < -1 ? 'bad' : 'good', 'lowCashPre') +
-    (() => { const a = dealAtMat(s, r); return it('Cash at maturity', money(a.v), `after repaying InRento in full${a.refi ? ` · incl. bank refinancing ${money(a.refi)}` : ''} · maturity ${mgMonth(s.maturity)}`, a.v < -1 ? 'bad' : 'good', a.refi ? '' : 'cashAtMaturity'); })() +
-    it('Collateral buffer', s.headroom == null ? '–' : pctf(s.headroom), 'how far collateral value can fall before it no longer covers loan + interest + selling costs', s.headroom == null ? '' : s.headroom < 0.1 ? 'bad' : s.headroom < 0.2 ? 'warn' : 'good', 'headroom') +
-    it('InRento fee', money(feeOf(s)), s.facility > 0 ? `${pctf(feeOf(s) / s.facility, 1)} of the facility` : '', '', 'arrFeeAmt') + '</div>';
+    it(r.tranchesOn ? 'Facility' : 'Loan', money(s.facility), r.tranchesOn && s.draw0 < s.facility - 1 ? `${mgK(s.draw0)} at drawdown` : '', '', 'facility') +
+    (s.netCash < -1 ? it('Funding gap at drawdown', money(-s.netCash), 'not covered by loan and equity', 'bad', 'netCash') : '') +
+    it('LTV at drawdown', s.mkt0 > 0 ? pctf(s.ltv0) : '–', s.mkt0 > 0 ? [r.tranchesOn && s.draw0 < s.facility - 1 ? `${pctf(s.draw0 / s.mkt0)} on the amount drawn` : '', `limit ${pctf(lim, 0)}`].filter(Boolean).join(' · ') : 'no collateral value yet', ltvT(s.ltv0), 'ltv0') +
+    it('Forced-sale LTV at drawdown', s.fs0 > 0 ? pctf(s.ltvFs0) : '–', s.fs0 > 0 ? `after a ${pctf(r.haircut, 0)} haircut` : '', ltvT(s.ltvFs0), 'ltvFs0') +
+    it('Highest LTV', pk ? pctf(pk.ltv) : '–', pk ? `${mgMonth(pk.date)} · forced sale ${pctf(pk.ltvFs)}` : '', ltvT(pk && pk.ltv), 'maxLtv') +
+    it('Borrower cash before maturity', s.lowCashPre < -1 ? money(s.lowCashPre) : 'Never negative', s.lowCashPre < -1 ? `${mgMonth(s.lowCashPreDate)} · ${negPre} month${negPre === 1 ? '' : 's'} below zero` : s.lowCashPreDate ? `lowest ${mgK(s.lowCashPre)} · ${mgMonth(s.lowCashPreDate)}` : '', s.lowCashPre < -1 ? 'bad' : 'good', 'lowCashPre') +
+    it('Cash at maturity', money(a.v), `${mgMonth(s.maturity)}${a.refi ? ' · incl. bank refinancing' : ''}`, a.v < -1 ? 'bad' : 'good', a.refi ? '' : 'cashAtMaturity') +
+    it('Collateral buffer', s.headroom == null ? '–' : pctf(s.headroom), 'incl. interest and selling costs', s.headroom == null ? '' : s.headroom < 0.1 ? 'bad' : s.headroom < 0.2 ? 'warn' : 'good', 'headroom') +
+    it('InRento fee', money(fee), s.facility > 0 ? `${pctf(fee / s.facility, 1)} of the facility` : '', '', 'arrFeeAmt') + '</div>';
 };
 // borrower cash month by month until maturity (the final repayment itself is the 'cash at maturity' number)
 function dealSpark(rows, mat, tone) {
