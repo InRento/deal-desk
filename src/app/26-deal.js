@@ -4,17 +4,18 @@
 { TABS.splice(0, 0, ['deal', 'Deal']); }
 function tabDeal() {
   const p = cur(), i = p.inputs;
-  const b = baseCcy(p), fields = dealTerms(p, S.modelOrig || S.model, b).map(([l, v]) => `<div class="dl-kv"><span>${esc(l)}</span><b>${esc(v)}</b></div>`).join('');
+  const eur = viewEUR(), b = eur ? 'EUR' : baseCcy(p), fx = eur ? fxRateOf(p) : 1, amt = (v) => money(E.num(v) / fx, b); // follows the PLN / EUR switch like the results
+  const fields = dealTerms(p, S.model, b).map(([l, v]) => `<div class="dl-kv"><span>${esc(l)}</span><b>${esc(v)}</b></div>`).join('');
   const prog = i.constrOn && i.trancheMode === 'progress';
-  const dd = (t) => { if (prog && !E.blank(t.milestone)) return `at ${fmtP(E.num(t.milestone))}% of the works`; if (t.trigger === 'balance') return `when the loan is below ${money(E.num(t.trigAmount), b)}`; const d = E.parseDate(t.date); return d == null ? 'no date' : datef(d); };
+  const dd = (t) => { if (prog && !E.blank(t.milestone)) return `at ${fmtP(E.num(t.milestone))}% of the works`; if (t.trigger === 'balance') return `when the loan is below ${amt(t.trigAmount)}`; const d = E.parseDate(t.date); return d == null ? 'no date' : datef(d); };
   const tr = i.tranchesOn ? `<div class="dl-sub"><div class="dl-h">Drawdown schedule</div><div class="tblwrap"><table><thead><tr><th>When</th><th class="n">Amount</th><th>Purpose</th></tr></thead><tbody>
-    ${p.tranches.map((t) => `<tr><td>${esc(dd(t))}</td><td class="n">${money(E.num(t.amount), b)}</td><td class="sub">${esc(t.label || '')}</td></tr>`).join('') || '<tr><td colspan="3" class="sub">No tranches yet.</td></tr>'}
+    ${p.tranches.map((t) => `<tr><td>${esc(dd(t))}</td><td class="n">${amt(t.amount)}</td><td class="sub">${esc(t.label || '')}</td></tr>`).join('') || '<tr><td colspan="3" class="sub">No tranches yet.</td></tr>'}
     </tbody><tfoot><tr><td>Facility</td><td class="n" data-out="dl-trtot"></td><td></td></tr></tfoot></table></div></div>` : '';
   const desc = String(i.deckDesc || '').trim();
   return `<div class="dl-head"><div class="dl-sum">${desc ? esc(desc) : '<span class="sub">No description yet – add it on Overview → Committee deck.</span>'}</div>
       <div class="sub">${esc([p.borrower, p.projectType, typeLabel(typeOf(p))].filter(Boolean).join(', '))}</div></div>
     <div class="dl-cols">
-      <section class="card"><h2>Proposed structure${b !== 'EUR' ? ` <span class="sub">in ${esc(b)}</span>` : ''}</h2><div class="dl-kvs">${fields}</div>${tr}</section>
+      <section class="card"><h2>Proposed structure${b !== 'EUR' || eur ? ` <span class="sub">in ${esc(b)}</span>` : ''}</h2><div class="dl-kvs">${fields}</div>${tr}</section>
       <div class="stack"><section class="card"><h2>Results${viewEUR() ? ' <span class="sub">in EUR</span>' : ''}</h2><div data-out="dealres"></div></section>${dealBR(p)}</div>
     </div>
     <section class="card" style="margin-top:16px"><div class="row" style="justify-content:space-between;align-items:baseline"><h2>Scenarios${viewEUR() ? ' <span class="sub">in EUR</span>' : ''}</h2><span class="sub">Built on Sensitivity. Each one reruns the full monthly cash flow.</span></div><div data-out="dealsc"></div>
@@ -40,8 +41,8 @@ function dealTerms(p, m, ccy) {
   }
   return out;
 }
-// the drawdown table is typed in the project currency, so its total is too
-OUT['dl-trtot'] = () => money((S.modelOrig || S.model).r.facility, baseCcy(cur()));
+// drawdown table total, in the currency shown
+OUT['dl-trtot'] = () => money(S.model.r.facility);
 // main benefits and risks: the committee-deck text from Overview, one point per line
 const brItems = (t) => String(t || '').split(/\n+/).map((x) => x.replace(/^\s*(?:[-–•*·]|\d+[.)])\s*/, '').trim()).filter(Boolean);
 function dealBR(p) {
