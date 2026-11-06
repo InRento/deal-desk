@@ -57,6 +57,7 @@ OUT.dealres = () => {
     it('Borrower cash before maturity', s.lowCashPre < -1 ? money(s.lowCashPre) : 'Never negative', s.lowCashPre < -1 ? `lowest in ${mgMonth(s.lowCashPreDate)}, ${negPre} month${negPre === 1 ? '' : 's'} below zero` : s.lowCashPreDate ? `lowest ${Math.abs(s.lowCashPre) < 1000 ? money(s.lowCashPre) : mgK(s.lowCashPre)} in ${mgMonth(s.lowCashPreDate)}` : '', s.lowCashPre < -1 ? 'bad' : 'good', 'lowCashPre') +
     it('Cash at maturity', money(a.v), `maturity ${mgMonth(s.maturity)}${a.refi ? ', incl. bank refinancing' : ''}`, a.v < -1 ? 'bad' : 'good', a.refi ? '' : 'cashAtMaturity') +
     it('Collateral buffer', s.headroom == null ? '–' : pctf(s.headroom), 'incl. interest and selling costs', s.headroom == null ? '' : s.headroom < 0.1 ? 'bad' : s.headroom < 0.2 ? 'warn' : 'good', 'headroom') +
+    (usesDscr(m) ? it(r.dscrBasis === 'monthly' ? 'Lowest DSCR' : 'Lowest DSCR, 12 months', s.dscrTest == null ? '–' : xf(s.dscrTest), s.dscrTest == null ? 'no loan payments before maturity' : `target ${xf(r.minDSCR)}`, s.dscrTest == null ? '' : s.dscrTest < r.minDSCR ? 'bad' : 'good', 'dscrTest') : '') +
     it('InRento fee', money(fee), s.facility > 0 ? `${pctf(fee / s.facility, 1)} of the facility` : '', '', 'arrFeeAmt') + '</div>';
 };
 // borrower cash month by month until maturity (the final repayment itself is the 'cash at maturity' number)
