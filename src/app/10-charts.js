@@ -1,5 +1,5 @@
 // ---------- charts ----------
-function lineChart(el, { x, series, fmt = money, zero = true, height = 260, bars = false }) {
+function lineChart(el, { x, series, fmt = money, zero = true, height = 260, bars = false, neg = '' }) {
   if (!el) return;
   const W = Math.max(300, el.clientWidth || 600), H = height, ml = 64, mr = 12, mt = 10, mb = 26;
   const all = series.flatMap((s) => s.values).filter((v) => v != null && isFinite(v));
@@ -13,15 +13,15 @@ function lineChart(el, { x, series, fmt = money, zero = true, height = 260, bars
   for (let v = lo; v <= hi + step / 2; v += step) g += `<line class="${Math.abs(v) < step / 1e6 ? 'zero' : 'grid'}" x1="${ml}" x2="${W - mr}" y1="${sy(v)}" y2="${sy(v)}"/><text class="ax" x="${ml - 6}" y="${sy(v) + 3.5}" text-anchor="end">${compact(v)}</text>`;
   const every = Math.max(1, Math.ceil(n / Math.max(2, Math.floor(pw / 70))));
   for (let i = 0; i < n; i += every) g += `<text class="ax" x="${sx(i)}" y="${H - 8}" text-anchor="middle">${esc(x[i].label)}</text>`;
-  let marks = '';
+  let marks = lo < 0 && neg ? `<rect class="negz" x="${ml}" y="${sy(0)}" width="${pw}" height="${mt + ph - sy(0)}"/><text class="negl" x="${ml + 6}" y="${mt + ph - 6}">${esc(neg)}</text>` : '';
   if (bars) {
     const bw = Math.max(1, (pw / n) * 0.7); const s = series[0];
     s.values.forEach((v, i) => { if (v == null) return; const y0 = sy(0), y1 = sy(v); marks += `<rect x="${sx(i) - bw / 2}" y="${Math.min(y0, y1)}" width="${bw}" height="${Math.max(0.5, Math.abs(y1 - y0))}" rx="${Math.min(2, bw / 3)}" fill="${v < 0 ? 'var(--bad)' : s.color}"/>`; });
   } else {
-    for (const s of series) {
+    for (const [k, s] of series.entries()) {
       let d = '', pen = false;
       s.values.forEach((v, i) => { if (v == null || !isFinite(v)) { pen = false; return; } d += (pen ? 'L' : 'M') + sx(i).toFixed(1) + ' ' + sy(v).toFixed(1); pen = true; });
-      marks += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="${s.w || 2}" stroke-linejoin="round" ${s.dash ? 'stroke-dasharray="5 4"' : ''}/>`;
+      marks += `<path data-s="${k}" d="${d}" fill="none" stroke="${s.color}" stroke-width="${s.w || 2}" stroke-linejoin="round" ${s.dash ? 'stroke-dasharray="5 4"' : ''}/>`;
     }
   }
   el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(series.map((s) => s.name).join(', '))}">${g}${marks}<line class="xh" x1="0" x2="0" y1="${mt}" y2="${mt + ph}" visibility="hidden"/><g class="dots"></g><rect x="${ml}" y="${mt}" width="${pw}" height="${ph}" fill="transparent"/></svg><div class="tip" hidden></div>`;
@@ -64,6 +64,11 @@ function drawCharts() {
   }
   const ncf = $('#ch-ncf');
   if (ncf) lineChart(ncf, { x: xs, series: [{ name: 'Net cash flow', color: 'var(--s1)', values: m.rows.map((r) => r.ncf) }], bars: true, height: 220 });
+  const dl = $('#ch-dl'); // Deal tab: borrower cash in each scenario shown as a card, until maturity
+  if (dl) {
+    const { scen } = sensModel(), shown = dealShown(scen), end = m.rows.findIndex((r) => r.date >= m.summary.maturity), n = end > 1 ? end : m.rows.length;
+    lineChart(dl, { x: xs.slice(0, n), series: shown.map((s, k) => ({ name: s.name, color: SCOL[k], values: s.res.rows.slice(0, n).map((r) => r.cash), w: k === 0 ? 2.5 : 2 })), height: 280, neg: 'Below zero: the borrower runs out of cash' });
+  }
   const se = $('#ch-sens');
   if (se) {
     const { scen } = sensModel();

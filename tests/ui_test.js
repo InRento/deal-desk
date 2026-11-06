@@ -42,13 +42,11 @@ const check = (ok, what, got) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}$
     await pg.fill('[data-k="assets.0.name"]', 'Building'); await fill('assets.0.market', '2000000');
     await fill('assets.0.salePrice', '2400000'); await pg.fill('[data-k="assets.0.saleDate"]', '2027-12-15'); await pg.dispatchEvent('[data-k="assets.0.saleDate"]', 'change'); await sleep(400);
     check((await text('#kpis')).includes('50.0%'), 'LTV 50% in the KPI strip', await text('#kpis'));
-    // 3b Deal tab: the same fields as Inputs and results that follow them
+    // 3b Deal tab: the structure as text (read only) and results
     await tab('deal');
+    check(!(await pg.$('.dl-kvs [data-k]')) && (await text('.dl-kvs')).includes('11%'), 'Deal tab shows the structure as text', await text('.dl-kvs'));
     check((await text('[data-out="dealres"]')).includes('50.0%'), 'Deal tab shows the LTV', await text('[data-out="dealres"]'));
     check((await text('[data-out="dealsc"]')).includes('Base'), 'Deal tab shows the scenarios', await text('[data-out="dealsc"]'));
-    await fill('inputs.rate', '11.5'); await pg.click('body'); await sleep(400); await tab('inputs');
-    check(await pg.inputValue('[data-k="inputs.rate"]') === '11.5', 'a change on the Deal tab shows on Inputs', await pg.inputValue('[data-k="inputs.rate"]'));
-    await fill('inputs.rate', '11'); await pg.click('body'); await sleep(400);
     // 3c tables work like a spreadsheet: select a block, fill down (⌘D), one value pasted into every selected cell, undo in one step
     await tab('assets'); await pg.click('[data-act="add-asset"]'); await sleep(300); await pg.click('[data-act="add-asset"]'); await sleep(400);
     const cell = async (k) => (await (await pg.$(`[data-k="${k}"]`)).evaluateHandle((e) => e.closest('td'))).asElement();
@@ -115,7 +113,7 @@ const check = (ok, what, got) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}$
     check((await text('#kpis')).includes('€250,000'), 'EUR view converts PLN 1,000,000 at 4', await text('#kpis'));
     await tab('deal');
     check((await text('[data-out="dealres"]')).includes('€250,000'), 'Deal tab results follow the EUR view', await text('[data-out="dealres"]'));
-    check(await pg.inputValue('[data-k="inputs.loan"]') === '1000000' && (await text('.ccynote')).includes('entered in PLN'), 'Deal tab inputs stay in PLN and say so', await text('.ccynote'));
+    check((await text('.dl-kvs')).includes('zł1,000,000') || (await text('.dl-kvs')).includes('zł 1,000,000'), 'Deal tab structure stays in PLN', await text('.dl-kvs'));
     await pg.click('[data-act="ccy"][data-v="orig"]'); await sleep(300);
     // 9b payment plan: 10% at the contract, the rest at the deed
     await tab('inputs'); await pg.click('[data-act="add-pay"]'); await sleep(300);
