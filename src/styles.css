@@ -471,3 +471,9 @@ table.pipe tbody tr:last-child td:first-child{border-bottom-left-radius:8px}tabl
 table.pipe tbody tr[data-open]:hover td{background:var(--surface-2)}
 table.pipe td.go{width:24px;color:var(--ink-3);font-size:18px;text-align:right;padding-right:14px}table.pipe tbody tr[data-open]:hover td.go{color:var(--accent)}
 table.pipe td:nth-last-child(2),table.pipe th:nth-last-child(2){padding-left:32px}
+/* spreadsheet-like tables (27-grid) */
+table.grid-in td.gs{background:var(--accent-soft)}
+table.grid-in td.gs .in,table.grid-in td.gs select{background:var(--accent-soft)}
+table.grid-in td.ga{outline:2px solid var(--accent);outline-offset:-2px}
+#ghandle{position:absolute;width:8px;height:8px;background:var(--accent);border:1px solid var(--surface);cursor:crosshair;z-index:30}
+body.gdrag,body.gdrag *{user-select:none;-webkit-user-select:none}

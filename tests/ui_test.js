@@ -49,6 +49,19 @@ const check = (ok, what, got) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}$
     await fill('inputs.rate', '11.5'); await pg.click('body'); await sleep(400); await tab('inputs');
     check(await pg.inputValue('[data-k="inputs.rate"]') === '11.5', 'a change on the Deal tab shows on Inputs', await pg.inputValue('[data-k="inputs.rate"]'));
     await fill('inputs.rate', '11'); await pg.click('body'); await sleep(400);
+    // 3c tables work like a spreadsheet: select a block, fill down (⌘D), one value pasted into every selected cell, undo in one step
+    await tab('assets'); await pg.click('[data-act="add-asset"]'); await sleep(300); await pg.click('[data-act="add-asset"]'); await sleep(400);
+    const cell = async (k) => (await (await pg.$(`[data-k="${k}"]`)).evaluateHandle((e) => e.closest('td'))).asElement();
+    await (await cell('assets.0.market')).click({ position: { x: 2, y: 2 } }); await (await cell('assets.2.market')).click({ position: { x: 2, y: 2 }, modifiers: ['Shift'] }); await sleep(150);
+    check((await pg.$$('td.gs')).length === 3, 'Shift+click selects a block of cells', String((await pg.$$('td.gs')).length));
+    await pg.keyboard.press('ControlOrMeta+D'); await sleep(500);
+    check((await pg.$$eval('[data-k$=".market"]', (x) => x.map((e) => e.value))).slice(0, 3).join() === '2000000,2000000,2000000', 'fill down copies the top cell', (await pg.$$eval('[data-k$=".market"]', (x) => x.map((e) => e.value))).join());
+    await pg.evaluate(() => { const dt = new DataTransfer(); dt.setData('text/plain', '1 500 000'); document.activeElement.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); });
+    await sleep(500);
+    check((await pg.$$eval('[data-k$=".market"]', (x) => x.map((e) => e.value))).slice(0, 3).join() === '1500000,1500000,1500000', 'one pasted value fills every selected cell', (await pg.$$eval('[data-k$=".market"]', (x) => x.map((e) => e.value))).join());
+    await pg.keyboard.press('ControlOrMeta+Z'); await sleep(500); await pg.keyboard.press('ControlOrMeta+Z'); await sleep(500);
+    check((await pg.$$eval('[data-k$=".market"]', (x) => x.map((e) => e.value))).join() === '2000000,,', 'undo takes back the paste and the fill, one step each', (await pg.$$eval('[data-k$=".market"]', (x) => x.map((e) => e.value))).join());
+    await pg.click('[data-act="del-asset"][data-i="2"]'); await sleep(300); await pg.click('[data-act="del-asset"][data-i="1"]'); await sleep(300);
     // 4 undo / redo
     await tab('inputs'); await fill('inputs.rate', '12'); await pg.click('body'); await sleep(1700);
     await pg.keyboard.press('Meta+z'); await sleep(400); if ((await pg.inputValue('[data-k="inputs.rate"]')) === '12') { await pg.keyboard.press('Control+z'); await sleep(400); }
