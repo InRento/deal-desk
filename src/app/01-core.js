@@ -49,7 +49,7 @@ const DEFAULT_INPUTS = () => ({
   currency: 'EUR', drawdown: nextMonthStart(), horizon: '24', openingCash: '0', opModel: 'simple',
   revenueSource: 'manual', revenue: '0', revGrowth: '0', opex: '0', opexGrowth: '0', cfStart: '', tax: '0', otherDebt: '0', otherDebtEnd: '',
   vat: '0', commission: '0', cardFee: '0', ancillary: '0',
-  loan: '0', tranchesOn: false, rate: '10', term: '24', repayType: 'Bullet', grace: '0', capitalise: 'No', payMonths: Array(12).fill(true), payPlan: [], escrowOn: false,
+  loan: '0', tranchesOn: false, rate: '10', term: '24', repayType: 'Bullet', grace: '0', capitalise: 'No', payMonths: Array(12).fill(true), payPlan: [], links: [], escrowOn: false,
   extOn: false, extMonths: '6', extFee: '1', extRate: '', defaultRate: '',
   sweepDefault: '100', sweepBasis: 'Gross sale price', sweepApplies: 'All asset sales', saleRepay: 'sweep', releasePct: '115',
   opSweepPct: '0', opSweepMin: '0', opSweepMonths: Array(12).fill(false),
@@ -84,6 +84,7 @@ function normalise(p) {
   if (!Array.isArray(p.inputs.seasonality) || p.inputs.seasonality.length !== 12) p.inputs.seasonality = Array(12).fill('1');
   if (!Array.isArray(p.inputs.payMonths) || p.inputs.payMonths.length !== 12) p.inputs.payMonths = Array(12).fill(true);
   if (!Array.isArray(p.inputs.payPlan)) p.inputs.payPlan = [];
+  if (!Array.isArray(p.inputs.links)) p.inputs.links = [];
   if (!Array.isArray(p.inputs.opSweepMonths) || p.inputs.opSweepMonths.length !== 12) p.inputs.opSweepMonths = Array(12).fill(false);
   if (!Array.isArray(p.inputs.ignoredChecks)) p.inputs.ignoredChecks = [];
   if (!p.inputs.sources || typeof p.inputs.sources !== 'object' || Array.isArray(p.inputs.sources)) p.inputs.sources = {};

@@ -70,7 +70,7 @@ ME = CONFIG["user"]
 DB_PATH = os.path.join(DATA, "drive-index.sqlite")
 NO_DRIVE = ("No shared Deal Desk folder found. Open Google Drive for Desktop, check that the \u201cDeal desk\u201d shared drive "
             "shows in Finder, then reopen Deal Desk.")
-APP_VERSION = "3.25.5"  # bump when the program changes; the launcher restarts an older running server
+APP_VERSION = "3.25.0"  # bump when the program changes; the launcher restarts an older running server
 
 # ---------------------------------------------------------------------------
 # Schema. Input columns keep exactly what was typed. NUMERIC columns store plain
@@ -126,7 +126,7 @@ INPUT_FIELDS = [
     ("dealType", "deal_type", "TEXT"), ("showAll", "show_all_inputs", "INTEGER"), ("intTiming", "interest_timing", "TEXT"),
     ("saleOrder", "sale_proceeds_order", "TEXT"), ("ignoredChecks", "ignored_checks", "JSON"),
     ("fxRate", "fx_rate_per_eur", "NUMERIC"), ("fxDate", "fx_rate_date", "TEXT"), ("sources", "field_sources", "JSON"), ("activeVersion", "active_version_id", "TEXT"),
-    ("benefits", "deck_benefits", "TEXT"), ("risks", "deck_risks", "TEXT"), ("deckDesc", "deck_description", "TEXT"),
+    ("benefits", "deck_benefits", "TEXT"), ("links", "deal_links", "JSON"), ("risks", "deck_risks", "TEXT"), ("deckDesc", "deck_description", "TEXT"),
     # construction / renovation (v3.13)
     ("constrOn", "construction_on", "INTEGER"), ("worksStart", "works_start_date", "TEXT"), ("worksEnd", "works_completion_date", "TEXT"),
     ("contingency", "works_contingency_pct", "NUMERIC"), ("spendCurve", "works_spend_curve", "TEXT"), ("fundingOrder", "works_funding_order", "TEXT"),

@@ -41,7 +41,7 @@ const check = (ok, what, got) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}$
   const page = async (port) => { const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, timezoneId: 'Europe/Vilnius', locale: 'en-GB' }); const pg = await ctx.newPage(); pg.errors = []; pg.on('pageerror', (e) => pg.errors.push(String(e))); await pg.goto(`http://127.0.0.1:${port}/`); await sleep(1200); return pg; };
   const shot = async (pg, name, clip) => { if (SHOTS) { fs.mkdirSync(SHOTS, { recursive: true }); await pg.screenshot({ path: path.join(SHOTS, name + '.png'), clip }); } };
   const bar = async (pg) => ((await pg.textContent('#lockbar')) || '').replace(/\s+/g, ' ').trim();
-  const open = async (pg, id) => { await pg.click('[data-act="home"]').catch(() => {}); await sleep(250); await pg.click(`tr[data-open="${id}"] b`); await sleep(600); };
+  const open = async (pg, id) => { await pg.click('[data-act="home"]').catch(() => {}); await sleep(250); await pg.click(`tr[data-open="${id}"] b`); await sleep(600); await pg.click('[data-tab="inputs"]').catch(() => {}); await sleep(300); }; // the Deal tab is read only, so the fields are on Inputs
   const top = { x: 0, y: 0, width: 1440, height: 560 };
   try {
     const lukas = await page(L.port), tautvydas = await page(T.port);

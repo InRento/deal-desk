@@ -15,7 +15,7 @@ function tabDeal() {
   return `<div class="dl-head"><div class="dl-sum">${desc ? esc(desc) : '<span class="sub">No description yet – add it on Overview → Committee deck.</span>'}</div>
       <div class="sub">${esc([p.borrower, p.projectType, typeLabel(typeOf(p))].filter(Boolean).join(', '))}</div></div>
     <div class="dl-cols">
-      <section class="card"><h2>Proposed structure${b !== 'EUR' || eur ? ` <span class="sub">in ${esc(b)}</span>` : ''}</h2><div class="dl-kvs">${fields}</div>${tr}</section>
+      <div class="stack"><section class="card"><h2>Proposed structure${b !== 'EUR' || eur ? ` <span class="sub">in ${esc(b)}</span>` : ''}</h2><div class="dl-kvs">${fields}</div>${tr}</section>${dealLinks(p)}</div>
       <div class="stack"><section class="card"><h2>Results${viewEUR() ? ' <span class="sub">in EUR</span>' : ''}</h2><div data-out="dealres"></div></section>${dealBR(p)}</div>
     </div>
     <section class="card" style="margin-top:16px"><div class="row" style="justify-content:space-between;align-items:baseline"><h2>Scenarios${viewEUR() ? ' <span class="sub">in EUR</span>' : ''}</h2><span class="sub">Built on Sensitivity. Each one reruns the full monthly cash flow.</span></div><div data-out="dealsc"></div>
@@ -41,6 +41,42 @@ function dealTerms(p, m, ccy) {
   }
   return out;
 }
+// links: project folder, listings, other information – they belong to the deal (not a version); only the lock holder edits,
+// and boxes without links are hidden from everyone else
+const LINK_BOXES = [['folder', 'Project folder', 'e.g. the Google Drive folder'], ['listings', 'Listings', 'e.g. Otodom, Aruodas'], ['other', 'Other information', 'e.g. adverse media, registry extracts']];
+const linkUrl = (u) => { let s = String(u || '').trim(); if (!s) return ''; if (!/^[a-z]+:\/\//i.test(s)) s = 'https://' + s; return /^https?:\/\/[^\s/]+\.[^\s]+$/i.test(s) ? s : ''; };
+const linkSite = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return u; } };
+function dealLinks(p) {
+  const ed = canEdit(p.id), L = p.inputs.links || [];
+  const boxes = LINK_BOXES.map(([k, t, ph]) => {
+    const items = L.map((l, j) => [l, j]).filter(([l]) => l.box === k);
+    if (!items.length && !ed) return '';
+    const open = ed && S.dlAdd === k;
+    return `<div class="dl-lb"><div class="dl-lbh"><span class="dl-h">${esc(t)}</span>${ed && !open ? `<button class="btn sm ghost" data-act="dl-add" data-box="${k}">+ Add link</button>` : ''}</div>
+      ${items.length ? `<ul class="dl-links">${items.map(([l, j]) => `<li><a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer" title="${esc(l.url)}"><span class="dl-lt">${esc(l.label || linkSite(l.url))}</span>${l.label ? `<span class="dl-ls">${esc(linkSite(l.url))}</span>` : ''}</a>${ed ? `<button class="xbtn" data-act="dl-del" data-i="${j}" aria-label="Remove link">×</button>` : ''}</li>`).join('')}</ul>` : open ? '' : '<div class="sub">No links yet.</div>'}
+      ${open ? `<div class="dl-lform"><input class="in" id="dl-url" placeholder="Paste the link (${esc(ph)})" autocomplete="off"><input class="in" id="dl-lbl" placeholder="Label (optional)" autocomplete="off"><div class="row" style="gap:6px"><button class="btn sm primary" data-act="dl-save" data-box="${k}">Add</button><button class="btn sm ghost" data-act="dl-cancel">Cancel</button></div></div>` : ''}</div>`;
+  }).join('');
+  return boxes ? `<section class="card"><h2>Links</h2><div class="dl-lbs">${boxes}</div></section>` : '';
+}
+function dealLinkSave(box) {
+  const p = cur(), u = linkUrl($('#dl-url') && $('#dl-url').value), lbl = String(($('#dl-lbl') && $('#dl-lbl').value) || '').trim();
+  if (!u) { toast('That does not look like a web link'); const x = $('#dl-url'); if (x) x.focus(); return; }
+  p.inputs.links = (p.inputs.links || []).concat([{ box, url: u, label: lbl }]); S.dlAdd = null;
+  scheduleSave(p.id); renderTab();
+}
+document.addEventListener('click', (e) => {
+  const b = e.target.closest && e.target.closest('[data-act^="dl-"]'); if (!b || S.view !== 'project') return;
+  const a = b.dataset.act, p = cur(); if (!p) return;
+  if (a === 'dl-add') { S.dlAdd = b.dataset.box; renderTab(); const x = $('#dl-url'); if (x) x.focus(); }
+  else if (a === 'dl-cancel') { S.dlAdd = null; renderTab(); }
+  else if (a === 'dl-save') dealLinkSave(b.dataset.box);
+  else if (a === 'dl-del') { p.inputs.links = (p.inputs.links || []).filter((_, j) => j !== +b.dataset.i); scheduleSave(p.id); renderTab(); }
+});
+document.addEventListener('keydown', (e) => {
+  if (!e.target || (e.target.id !== 'dl-url' && e.target.id !== 'dl-lbl')) return;
+  if (e.key === 'Enter') { e.preventDefault(); dealLinkSave(S.dlAdd); }
+  else if (e.key === 'Escape') { S.dlAdd = null; renderTab(); }
+});
 // drawdown table total, in the currency shown
 OUT['dl-trtot'] = () => money(S.model.r.facility);
 // main benefits and risks: the committee-deck text from Overview, one point per line
