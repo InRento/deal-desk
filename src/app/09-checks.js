@@ -1,4 +1,5 @@
-// Model check: likely input mistakes, with fixes; issue bar and field marks.
+// Model check: only model integrity – dates and timing, missing halves, double counting, typos – with fixes; issue bar and field marks.
+// Credit opinions (LTV vs limit, DSCR, cash shortfalls, €5m, valuation age…) are not checks: they are shown as numbers (v3.25).
 // ================= Model checks =================
 const fmtP = (v) => String(+v.toFixed(4));
 function lint(p, m) {
@@ -15,16 +16,12 @@ function lint(p, m) {
     const v = n(i[k]);
     if (!bl(i[k]) && v > 0 && v < th) add({ id: 'frac:' + k, sev: 'error', title: `${l} is ${fmtP(v)}% – did you mean ${fmtP(v * 100)}%?`, why: 'Percentages are typed in percent (13.5 = 13.5%). A fraction like 0.135 is read as 0.135%.', tab: 'inputs', keys: ['inputs.' + k], fix: [{ label: `Change to ${fmtP(v * 100)}%`, run: (q) => { q.inputs[k] = fmtP(v * 100); } }] });
   }
-  if (n(i.rate) > 30) add({ id: 'rate-high', sev: 'warn', title: `Interest rate ${fmtP(n(i.rate))}% looks too high`, why: 'Check for a typo (e.g. 135 instead of 13.5).', tab: 'inputs', keys: ['inputs.rate'] });
-  if (n(i.maxLTV) > 70) add({ id: 'maxltv', sev: 'warn', title: `Maximum LTV set to ${fmtP(n(i.maxLTV))}%`, why: 'Above the 70% maximum InRento uses on the platform.', tab: 'inputs', keys: ['inputs.maxLTV'] });
-  if (n(i.term) > 60) add({ id: 'term-long', sev: 'warn', title: `Loan term ${n(i.term)} months`, why: 'Unusually long for InRento loans (typically 12–36 months). Months, not years?', tab: 'inputs', keys: ['inputs.term'] });
-  if (n(i.reserveMonths) > r.termBase) add({ id: 'reserve-long', sev: 'warn', title: `Interest reserve (${n(i.reserveMonths)} months) is longer than the term`, why: 'The reserve is withheld from the loan; months beyond the term are wasted.', tab: 'inputs', keys: ['inputs.reserveMonths'] });
-  if (n(i.profitShare) > 0 && n(i.fixedGain) > 0) add({ id: 'gain-and-share', sev: 'warn', title: 'Both a fixed capital gain and a profit share are set', why: 'InRento loans normally use one or the other (1.5% p.a. or 30% of profit).', tab: 'inputs', keys: ['inputs.fixedGain', 'inputs.profitShare'] });
   if (bl(i.drawdown)) add({ id: 'no-drawdown', sev: 'error', title: 'No drawdown date', why: 'The model starts on 1 Jan 2026 by default; every date in the cash flow is off.', tab: 'inputs', keys: ['inputs.drawdown'] });
   else if (dd < today - 62 && !['Funded', 'Realised', 'Repaid', 'Closed', 'Declined', 'Rejected'].includes(p.status)) add({ id: 'drawdown-past', sev: 'warn', title: `Drawdown date ${ddf(dd)} is in the past`, why: 'For a deal still being assessed, sales and interest are counted from a date that has already gone.', tab: 'inputs', keys: ['inputs.drawdown'], fix: [{ label: 'Move to the 1st of next month', run: (q) => { q.inputs.drawdown = nextMonthStart(); } }] });
 
   // 2. collateral and sales rows
-  const seen = {}, noVal = [];
+  const lateN = p.assets.filter((pa) => !bl(pa.salePrice) && E.parseDate(pa.saleDate) > mat).length; // two or more: one item from lintLateSales
+  const seen = {};
   p.assets.forEach((pa, j) => {
     const a = r.assets[j]; if (!a) return;
     const k = (f) => `assets.${j}.${f}`, filled = pa.name || !bl(pa.market) || !bl(pa.salePrice);
@@ -39,25 +36,13 @@ function lint(p, m) {
     if (a.saleDate != null && a.salePrice == null) add({ id: 'date-noprice:' + j, sev: 'error', title: `${nm(pa, j)} has a sale date but no sale price`, why: 'The sale is not counted.', tab: 'assets', keys: [k('salePrice')] });
     if (a.saleDate != null && a.salePrice != null) {
       if (a.saleDate > hEnd) { const per = Math.ceil((a.saleDate - dd) / 30.44) + 2; add({ id: 'sale-afterh:' + j, sev: 'error', title: `${nm(pa, j)} sells on ${ddf(a.saleDate)}, after the projection ends`, why: 'Sales after the last projected month are left out of the model completely.', tab: 'assets', keys: [k('saleDate')], fix: [{ label: `Extend projection to ${per} months`, run: (q) => { q.inputs.horizon = String(per); } }] }); }
-      else if (a.saleDate > mat) add({ id: 'sale-aftermat:' + j, sev: 'warn', title: `${nm(pa, j)} sells on ${ddf(a.saleDate)}, after the loan matures (${ddf(mat)})`, why: 'This sale cannot repay the loan; the full balance is due from the borrower at maturity.', tab: 'assets', keys: [k('saleDate')] });
+      else if (a.saleDate > mat && lateN < 2) add({ id: 'sale-aftermat:' + j, sev: 'warn', title: `${nm(pa, j)} sells on ${ddf(a.saleDate)}, after the loan matures (${ddf(mat)})`, why: 'This sale cannot repay the loan; the full balance is due from the borrower at maturity.', tab: 'assets', keys: [k('saleDate')] });
       if (a.saleDate < mStart) add({ id: 'sale-before:' + j, sev: 'warn', title: `${nm(pa, j)} sale date ${ddf(a.saleDate)} is before the drawdown month`, why: 'Booked in month 1. If it already happened, it is not a source of repayment – enter it as equity or leave it out.', tab: 'assets', keys: [k('saleDate')] });
-      if (a.market > 0 && (a.salePrice < 0.4 * a.market || a.salePrice > 2.5 * a.market)) add({ id: 'price-vs-mv:' + j, sev: 'warn', title: `Sale price of ${nm(pa, j)} is ${Math.round(a.salePrice / a.market * 100)}% of its market value`, why: 'Typo, or the value and price refer to different things?', tab: 'assets', keys: [k('salePrice'), k('market')] });
-      if (a.minPrice != null && a.salePrice < a.minPrice) add({ id: 'below-min:' + j, sev: 'warn', title: `${nm(pa, j)} sells below its minimum price`, why: `${money(a.salePrice)} vs minimum ${money(a.minPrice)}.`, tab: 'assets', keys: [k('salePrice'), k('minPrice')] });
-      if (r.saleRepay === 'release' && a.release != null && a.salePrice * (1 - r.sellCost) - a.notary < a.release) add({ id: 'below-release:' + j, sev: 'warn', title: `${nm(pa, j)} sale does not cover its release price`, why: `Net proceeds below the release price of ${money(a.release)}.`, tab: 'assets', keys: [k('salePrice')] });
-      if (a.inColl && r.saleRepay === 'sweep' && a.sweep != null && a.sweep < r.sweepDefault - 1e-9) add({ id: 'low-sweep:' + j, sev: 'warn', title: `Only ${fmtP(a.sweep * 100)}% of the ${nm(pa, j)} sale repays the loan`, why: `The default sweep is ${fmtP(r.sweepDefault * 100)}%. The rest goes to the borrower although the unit is pledged.`, tab: 'assets', keys: [k('sweep')], fix: [{ label: 'Use the default sweep', run: (q) => { q.assets[j].sweep = ''; } }] });
-      if (a.listPrice && a.salePrice < a.listPrice * 0.9) add({ id: 'disc:' + j, sev: 'info', title: `${nm(pa, j)} priced ${Math.round((1 - a.salePrice / a.listPrice) * 100)}% below list`, why: 'Fine if it reflects a signed price; worth noting for the other units.', tab: 'assets', keys: [k('salePrice')] });
     }
     if (['Reserved', 'Preliminary contract'].includes(pa.status) && a.saleDate == null) add({ id: 'status-nodate:' + j, sev: 'error', title: `${nm(pa, j)} is ${pa.status.toLowerCase()} but has no sale date`, why: 'Enter the expected final deed date and the agreed price so it repays the loan.', tab: 'assets', keys: [k('saleDate')] });
     if (pa.status === 'Final deed signed' && a.saleDate != null && a.saleDate > today + 31) add({ id: 'status-future:' + j, sev: 'warn', title: `${nm(pa, j)} is marked as sold but the sale date is ${ddf(a.saleDate)}`, why: 'Status and date disagree.', tab: 'assets', keys: [k('status'), k('saleDate')] });
-    if (a.deposit > 0 && !pa.depositHeld) add({ id: 'dep-where:' + j, sev: 'warn', title: `Where is the ${money(a.deposit)} deposit on ${nm(pa, j)}?`, why: 'If it was already paid to the borrower, only the balance arrives at the deed and less repays the loan.', tab: 'assets', keys: [k('depositHeld')] });
     if (a.deposit > 0 && a.salePrice != null && a.deposit > a.salePrice) add({ id: 'dep-big:' + j, sev: 'error', title: `Deposit on ${nm(pa, j)} is larger than its sale price`, why: 'Typo?', tab: 'assets', keys: [k('deposit')] });
-    if (a.inColl && a.market > 0) {
-      const vd = E.parseDate(pa.valDate);
-      if (vd != null && vd < dd - 365) add({ id: 'val-old:' + j, sev: 'warn', title: `Valuation of ${nm(pa, j)} is ${Math.floor((dd - vd) / 30.44)} months old at drawdown`, why: 'Older than 12 months. Ask for an update, or a confirmation of value from the valuer.', tab: 'assets', keys: [k('valDate')] });
-      else if (vd == null) noVal.push(j);
-    }
   });
-  if (noVal.length) add({ id: 'val-nodate', sev: 'info', title: noVal.length === 1 ? `No valuation date for ${nm(p.assets[noVal[0]], noVal[0])}` : `No valuation date on ${noVal.length} collateral rows`, why: 'Add the dates so valuations older than 12 months get flagged.', tab: 'assets', keys: noVal.map((j) => `assets.${j}.valDate`) });
   // double-counted building: one row ≈ the sum of the units also listed
   const units = r.assets.filter((a) => a.inColl && a.market > 0 && a.salePrice != null);
   const uSum = units.reduce((x, a) => x + a.market, 0);
@@ -80,28 +65,11 @@ function lint(p, m) {
     if (pa.type === 'Income' && pa.recurrence !== 'Monthly' && amt > 0) {
       const hit = sales.find((x) => (x.price && Math.abs(x.price - amt) <= x.price * 0.01) || (x.list && Math.abs(x.list - amt) <= x.list * 0.01));
       if (hit) add({ id: 'adj-dup-sale:' + j, sev: 'error', title: `Income ${lab} (${money(amt)}) is also entered as the sale of ${nm(p.assets[hit.j], hit.j)}`, why: 'The same money is counted twice: once as income in EBITDA and DSCR, once as a sale.', tab: 'adjust', keys: [k('amount'), `assets.${hit.j}.salePrice`], fix: [{ label: 'Delete this adjustment', run: (q) => { q.adjustments.splice(j, 1); } }] });
-      else if (loan > 0 && amt >= loan * 0.1) add({ id: 'adj-big-income:' + j, sev: 'warn', title: `${lab}: one-off income of ${money(amt)}`, why: 'If this is a sale or presale, enter it in Collateral & sales instead: then it repays the loan and is stress-tested. As income it inflates EBITDA and DSCR.', tab: 'adjust', keys: [k('amount'), k('type')], fix: [{ label: 'Move to Collateral & sales', run: (q) => { const x = q.adjustments.splice(j, 1)[0]; q.assets.push(Object.assign(blankAsset(), { name: x.desc || 'Sale', inColl: false, saleDate: x.date, salePrice: x.amount, notes: x.notes || '' })); } }] });
     }
-    if (pa.type === 'Expense' && /construct|renovat|works|capex|fit[- ]?out|refurb|build|statyb|remont|budow|įreng|apdail|rekonstr/i.test((pa.desc || '') + ' ' + (pa.notes || ''))) add({ id: 'adj-capex:' + j, sev: 'warn', title: `${lab} looks like construction spend entered as an Expense`, why: 'Expenses reduce EBITDA and DSCR. Works funded by the loan or equity should be Capex (cash only).', tab: 'adjust', keys: [k('type')], fix: [{ label: 'Change type to Capex', run: (q) => { q.adjustments[j].type = 'Capex'; } }] });
   });
 
-  // 4. sources and uses at drawdown
-  const usesIn = s.refi + s.purchase + s.closing + s.otherUses;
-  if (s.netCash < -1) {
-    const fx = [];
-    if (s.grossUp > 0 && !r.tranchesOn) { const gu = Math.ceil(s.grossUp / 1000) * 1000; fx.push({ label: `Gross up loan to ${money(gu)}`, run: (q) => { q.inputs.loan = String(gu); } }); }
-    fx.push({ label: `Borrower brings ${money(-s.netCash)} equity`, run: (q) => { q.inputs.equityAuto = false; q.inputs.equity = String(Math.ceil(E.num(q.inputs.equity) + -s.netCash)); } });
-    add({ id: 'su-gap', sev: 'error', title: `Funding gap of ${money(-s.netCash)} at drawdown`, why: `Uses (${money(usesIn)}) plus fee (${money(r.feeCap ? 0 : s.fee0)}) and interest reserve (${money(s.reserveAmt)}) exceed the loan paid out (${money(s.draw0)}) and equity (${money(s.equity)}). Usually the fee and reserve were not funded.`, tab: 'summary', keys: ['inputs.loan', 'inputs.equity'], fix: fx });
-  }
-  if (loan > 0 && usesIn <= 0 && !r.equity) add({ id: 'su-nouses', sev: 'warn', title: 'No uses of the loan entered', why: 'Refinancing, purchase, closing costs and other uses are all zero: the model assumes the borrower keeps the whole loan as cash.', tab: 'inputs', keys: ['inputs.refinanced', 'inputs.purchase', 'inputs.otherUses'] });
-  else if (loan > 0 && s.netCash > loan * 0.1) add({ id: 'su-surplus', sev: 'info', title: `Borrower receives ${money(s.netCash)} of free cash at drawdown`, why: 'Equity release or missing uses? Make sure it is intended.', tab: 'summary', keys: [] });
-  if (s.otherUses > 0) add({ id: 'su-other', sev: s.otherUses > loan * 0.15 ? 'warn' : 'info', title: `${money(s.otherUses)} of the loan goes outside the security`, why: 'Other uses (e.g. another project of the group) add exposure without adding collateral. Ask for security over it, or release it later from sale proceeds.', tab: 'inputs', keys: ['inputs.otherUses'] });
+  // 4. refinancing, equity and tranches entered twice or inconsistently
   if (r.refiManual > 0 && r.refiTable > 0) add({ id: 'refi-double', sev: 'warn', title: 'Debt refinanced is entered both in Inputs and in the Existing debts table', why: `${money(r.refiManual)} + ${money(r.refiTable)}. The two are added together: check it is not the same debt twice.`, tab: 'inputs', keys: ['inputs.refinanced'] });
-  p.debts.forEach((d, j) => {
-    if (d.refinanced === false || d.refinanced === 'No') return;
-    const txt = `${d.lender || ''} ${d.notes || ''}`;
-    if (/capex|capital exp|expenditure|construct|hotel|works|invest|budow|statyb|projekt|project/i.test(txt) && !/bank|loan|kredyt|paskol|lender|bond|obligac/i.test(txt)) add({ id: 'debt-notdebt:' + j, sev: 'warn', title: `“${d.lender}” in Existing debts doesn't look like a debt`, why: 'Money for works or another project is not refinancing. Put it under Other uses so it is flagged as leaving the security.', tab: 'inputs', keys: [`debts.${j}.lender`, `debts.${j}.balance`], fix: [{ label: 'Move to Other uses', run: (q) => { const x = q.debts.splice(j, 1)[0]; q.inputs.otherUses = String(E.num(q.inputs.otherUses) + E.num(x.balance)); } }] });
-  });
   if (!i.equityAuto && n(i.equity) > 0) {
     const early = r.assets.filter((a) => a.salePrice != null && a.saleDate != null && a.saleDate <= dd + 120);
     const tot = early.reduce((x, a) => x + a.salePrice, 0);
@@ -113,25 +81,7 @@ function lint(p, m) {
     if (n(i.loan) > 0 && Math.abs(n(i.loan) - r.facility) > 1) add({ id: 'tranche-sum', sev: 'info', title: `Tranches add up to ${money(r.facility)}, the loan amount field says ${money(n(i.loan))}`, why: 'With tranches on, the facility is the sum of tranches.', tab: 'inputs', keys: ['inputs.tranchesOn'], fix: [{ label: `Set loan amount to ${money(r.facility)}`, run: (q) => { q.inputs.loan = String(Math.round(r.facility)); } }] });
   }
 
-  // 5. deal type expectations
-  const anySale = r.assets.some((a) => a.salePrice != null);
-  if ((t === 'units' || t === 'bridge') && !anySale && (p.assets.some((a) => a.name) || loan > 0)) add({ id: 'type-nosales', sev: 'error', title: 'No sales entered', why: `${typeLabel(t)} deals repay from sales. Add sale prices and dates in Collateral & sales.`, tab: 'assets', keys: [] });
-  const noRev = r.opModel === 'detailed' ? !p.revLines.length : !(r.revenue > 0);
-  if ((t === 'operating' || t === 'rental') && noRev && loan > 0) add({ id: 'type-norev', sev: 'error', title: 'No revenue entered', why: `${typeLabel(t)} deals repay from ${t === 'rental' ? 'rent' : 'operations'}.${t === 'rental' && i.revenueSource === 'assets' ? ' Revenue comes from the rent column in Collateral & sales.' : ''}`, tab: t === 'rental' && i.revenueSource === 'assets' ? 'assets' : 'inputs', keys: ['inputs.revenue'] });
-  if (t === 'operating' && r.opModel === 'simple' && r.revenue > 0 && !(r.opex > 0)) add({ id: 'type-noopex', sev: 'warn', title: 'Revenue but no operating costs', why: 'EBITDA equals revenue, so DSCR is overstated.', tab: 'inputs', keys: ['inputs.opex'] });
-
-  // 6. outcome: who pays
-  const refiOk = r.refiLTV > 0 && s.refiMax != null && s.paydown != null && s.paydown <= 1;
-  if (s.cashAtMaturity != null && s.cashAtMaturity < -1 && !refiOk) {
-    const late = r.assets.filter((a) => a.salePrice != null && a.saleDate != null && a.saleDate > mat).length;
-    add({ id: 'short-at-maturity', sev: 'error', title: `Borrower is ${money(-s.cashAtMaturity)} short at maturity`, why: `Sales, cash flow and reserve do not cover what is owed.${late ? ` ${late} sale${late > 1 ? 's are' : ' is'} dated after maturity.` : ''} If a bank refinances the loan, set the bank LTV for refinancing (Inputs 6) so the model tests it; otherwise add the exit sale.`, tab: 'summary', keys: [] });
-  }
-  if (r.intTiming === 'monthly' && !r.capitalise) {
-    let dry = 0;
-    for (const x of rows) if (x.p >= 1 && x.p <= r.term && x.intCash > 0.5 && x.cfads <= 0 && x.netSale <= 0) dry++;
-    if (dry >= 3) add({ id: 'int-nosource', sev: 'warn', title: `Interest has no source in ${dry} months`, why: 'The borrower pays monthly interest with no income or sales in those months. Size the interest reserve, roll up the interest, or prove other cash (guarantor, group).', tab: 'inputs', keys: ['inputs.reserveMonths'], fix: [{ label: `Interest reserve of ${Math.min(dry + n(i.reserveMonths), r.termBase)} months`, run: (q) => { q.inputs.reserveMonths = String(Math.min(dry + E.num(q.inputs.reserveMonths), E.num(q.inputs.term))); } }] });
-  }
-  for (const f of [lintEur, lintTranches, lintLateSales, lintAssumed, lintWorks, lintPayPlan, lintLoans]) f(p, m, add);
+  for (const f of [lintTranches, lintLateSales, lintAssumed, lintWorks, lintPayPlan, lintLoans]) f(p, m, add);
   const ign = new Set(i.ignoredChecks || []);
   const ord = { error: 0, warn: 1, info: 2 };
   return out.map((x) => Object.assign(x, { ignored: ign.has(x.id) })).sort((a, b) => ord[a.sev] - ord[b.sev]);
@@ -203,17 +153,7 @@ function lintWorks(p, m, add) {
   const W = m.k.W, comp = s.completion;
   if (E.blank(i.worksEnd)) add({ id: 'works-noend', sev: 'warn', title: 'No completion date', why: 'The works are spread until the end of the loan term. Enter the planned completion.', tab: 'inputs', keys: ['inputs.worksEnd'] });
   if (comp > s.maturity) add({ id: 'works-aftermat', sev: 'error', title: `Completion (${datef(comp)}) is after the loan matures (${datef(s.maturity)})`, why: 'The loan must be repaid before the building is finished and can be sold.', tab: 'inputs', keys: ['inputs.worksEnd', 'inputs.term'] });
-  if (s.lowCashWorks != null && s.lowCashWorks < -1) add({ id: 'works-gap', sev: 'error', title: `Funding gap during the works: borrower cash reaches ${money(s.lowCashWorks)} in ${datef(s.lowCashWorksDate)}`, why: 'Costs, VAT and interest run ahead of equity and tranches. More equity, earlier tranches, or a smaller budget.', tab: 'inputs', keys: ['inputs.constrEquity'] });
-  if (c.cont < 0.05) add({ id: 'works-cont', sev: 'info', title: `Contingency ${pctf(c.cont, 0)} on the cost to complete`, why: 'Renovations usually carry 5–10%, new builds 10–15%.', tab: 'inputs', keys: ['inputs.contingency'] });
-  if (!r.assets.some((a) => a.inColl && a.marketDone != null)) add({ id: 'works-nodone', sev: 'info', title: 'No value on completion entered', why: 'Collateral stays at the as-is value throughout. Enter the appraisal\'s value on completion per asset (Collateral & sales).', tab: 'assets', keys: p.assets.map((a, j) => `assets.${j}.marketDone`).slice(0, 1) });
-  const early = p.assets.map((a, j) => ({ a, j, d: E.parseDate(a.saleDate) })).filter((x) => !E.blank(x.a.salePrice) && x.d != null && x.d < E.eomonth(comp, -1) + 1);
-  if (early.length) add({ id: 'works-salesearly', sev: 'warn', title: `${early.length} sale${early.length > 1 ? 's are' : ' is'} dated before completion (${datef(comp)})`, why: 'A final deed usually needs the completed building. If these are presales, enter the expected deed date.', tab: 'assets', keys: early.map((x) => `assets.${x.j}.saleDate`) });
   if (c.curve === 'manual') { const bad = p.constrLines.filter((l) => { const t = (l.sched || []).reduce((a, v) => a + E.num(v), 0), rem = Math.max(0, E.num(l.budget) - E.num(l.spent)); return rem > 0 && Math.abs(t - rem) > Math.max(1, rem * 0.005); });
     if (bad.length) add({ id: 'works-sched', sev: 'warn', title: `Monthly schedule does not add up to the remaining budget on ${bad.length} line${bad.length > 1 ? 's' : ''}`, why: 'The schedule is used only for its shape and scaled to budget − spent to date.', tab: 'inputs', keys: ['inputs.spendCurve'] }); }
-  if (!r.progressMode && r.tranchesOn) { // tranches on dates: are draws running ahead of the works?
-    let drawn = 0, spent = 0, eq = 0;
-    for (const x of m.rows) { if (!x.p) continue; drawn += x.draw || 0; spent += x.works || 0; eq += x.worksEq || 0;
-      if (x.draw > 0 && drawn > spent - eq + 1) { add({ id: 'works-ahead', sev: 'warn', title: `Tranches run ahead of the works in ${datef(x.date)}`, why: `${money(drawn)} drawn after drawdown while only ${money(Math.max(0, spent - eq))} of works was due for loan funding by then. Release against progress (Inputs → Loan) or move the tranche.`, tab: 'inputs', keys: ['inputs.trancheMode'] }); break; } }
-  }
   if (r.progressMode) { const late = r.tranches.filter((t, k) => t.milestone != null && r.trancheAt[k] > r.term); if (late.length) add({ id: 'works-trlate', sev: 'error', title: 'A tranche milestone is only reached after maturity', why: 'That tranche would never be drawn while the loan runs.', tab: 'inputs', keys: [`tranches.${late[0].idx}.milestone`] }); }
 }

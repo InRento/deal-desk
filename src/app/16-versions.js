@@ -30,9 +30,9 @@ async function vSwitch(vid) {
   await loadSide();
   const v = vById(vid); if (!v) { toast('Version not found'); return; }
   const data = normalise(clone(v.data)); data.createdAt = p.createdAt; delete data.id; data.inputs.activeVersion = String(vid);
-  const keep = DEAL_LEVEL(p); // stage, next action, open items, decision log, Gmail label, deck description, benefits and risks belong to the deal, not the version
+  const keep = DEAL_LEVEL(p); // stage, next action, open items, decision log, deck description, benefits and risks belong to the deal, not the version
   Object.assign(data, { status: keep.status, nextAction: keep.nextAction, nextOwner: keep.nextOwner, nextDue: keep.nextDue, todos: keep.todos, judgement: keep.judgement });
-  Object.assign(data.inputs, { gmailLabel: keep.gmailLabel, benefits: keep.benefits, risks: keep.risks, deckDesc: keep.deckDesc });
+  Object.assign(data.inputs, { benefits: keep.benefits, risks: keep.risks, deckDesc: keep.deckDesc });
   S.projects[id] = data; delete UNDO[id]; undoInit(id);
   scheduleSave(id, 10); recalc(true); render();
   toast(`Now on “${v.label}”. Edits are saved into this version.`);
@@ -138,14 +138,14 @@ function vMetrics(v) {
     if (ok(0)) { let lo = 0, hi = 0.95; for (let i = 0; i < 30; i++) { const mid = (lo + hi) / 2; if (ok(mid)) lo = mid; else hi = mid; } drop = lo; be = avg * (1 - lo); } else drop = -1;
   }
   let lint0 = []; try { lint0 = lint(p, m).filter((x) => !x.ignored); } catch (e) {}
-  return (V_CACHE[key] = { facility: s.facility, rate: r.rate, term: r.termBase, ltv0: s.ltv0, ltvFs0: s.ltvFs0, maxLtv: s.maxLtv, avg, be, drop, lowCash: s.lowCashPre, repaid: s.repaidDate, irr: s.irr, profit: s.profit, mistakes: lint0.filter((x) => x.sev === 'error').length, flags: s.flags + lint0.filter((x) => x.sev === 'warn').length, cur: p.inputs.currency || 'EUR' });
+  return (V_CACHE[key] = { facility: s.facility, rate: r.rate, term: r.termBase, ltv0: s.ltv0, ltvFs0: s.ltvFs0, maxLtv: s.maxLtv, avg, be, drop, lowCash: s.lowCashPre, repaid: s.repaidDate, fee: s.arrFeeAmt, mistakes: lint0.filter((x) => x.sev === 'error').length, flags: lint0.filter((x) => x.sev === 'warn').length, cur: p.inputs.currency || 'EUR' });
 }
 const V_ROWS = [
   ['Facility', 'facility', (v) => money(v), 0], ['Rate', 'rate', (v) => pctf(v, 2), 0], ['Term', 'term', (v) => v + ' m', 0],
   ['LTV at drawdown (market)', 'ltv0', (v) => pctf(v), -1], ['LTV at drawdown (lending value)', 'ltvFs0', (v) => pctf(v), -1], ['Highest LTV during the loan', 'maxLtv', (v) => pctf(v), -1],
   ['Average planned price per m²', 'avg', (v) => (v == null ? '–' : money(v)), 0], ['Break-even price per m²', 'be', (v) => (v == null ? '–' : money(v)), -1], ['Price can fall', 'drop', (v) => (v == null ? '–' : v < 0 ? 'fails at plan' : '−' + (v * 100).toFixed(1) + '%'), 1],
   ['Lowest borrower cash before exit', 'lowCash', (v) => money(v), 1], ['Loan repaid', 'repaid', (v) => (v == null ? 'not repaid' : datef(v)), -1],
-  ['InRento IRR', 'irr', (v) => pctf(v, 1), 1], ['Lender profit', 'profit', (v) => money(v), 1], ['Likely mistakes', 'mistakes', (v) => String(v), -1], ['Flags to check', 'flags', (v) => String(v), -1],
+  ['InRento fee', 'fee', (v) => (v == null ? '–' : money(v)), 0], ['Model mistakes', 'mistakes', (v) => String(v), -1], ['Model items to check', 'flags', (v) => String(v), -1],
 ];
 function vSelected() {
   const vs = vAll(); if (!vs.length) return [];

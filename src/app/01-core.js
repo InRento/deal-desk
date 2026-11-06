@@ -122,7 +122,6 @@ async function initStore() {
     try { S.info = await api('GET', '/api/info'); } catch {}
   } catch (e) { S.store = 'offline'; S.storeErr = /shared Deal Desk folder/.test(e.message) ? e.message : null; }
   render();
-  mailBoot();
 }
 function scheduleSave(id, delay = 600) {
   if (!canEdit(id)) return readOnlyRevert(id);
@@ -173,7 +172,7 @@ let toastT; function toast(msg) { let t = $('#toast'); if (!t) { t = document.cr
 
 // ---------- navigation ----------
 function go(view, id, tab) {
-  if (view !== 'project' || id !== S.curId) { closeMail(); TR.stack = []; renderTrace(); }
+  if (view !== 'project' || id !== S.curId) { TR.stack = []; renderTrace(); }
   if (id !== S.curId) S.cmpSel = null;
   S.view = view; S.curId = id || null; S.confirmDel = false; S.versions = null; S.openLine = null;
   if (tab) S.tab = tab;
@@ -226,6 +225,10 @@ function topBar() {
   <nav class="tabs" role="tablist" id="tabs">${visibleTabs().map((t) => `<button class="tab" role="tab" data-tab="${t[0]}" aria-selected="${S.tab === t[0]}">${t[1]}</button>`).join('')}</nav></div>` : ''}
   </header>`;
 }
+// DSCR only means something when the borrower has operating income (rental and operating deals)
+const usesDscr = (m) => !!m && m.rows.some((x) => (x.revenue || 0) > 0);
+// what InRento earns: the arrangement fee (interest and capital gain go to the investors)
+const feeOf = (s) => s.arrFeeAmt || 0; // over the whole loan, incl. fees on later tranches
 function cls(v, good, bad) { if (v == null) return ''; return good(v) ? 'good' : bad(v) ? 'bad' : ''; }
 function renderKpis() {
   const el = $('#kpis'); if (!el || !S.model) return;
@@ -235,10 +238,11 @@ function renderKpis() {
   el.innerHTML = k(r.tranchesOn ? 'Facility' : 'Loan', money(s.facility), '', 'facility') + k('Rate · term', `${pctf(r.rate, 2)} · ${r.termBase}${r.extOn ? '+' + r.extMonths : ''} m`) +
     k('LTV', pctf(s.ltv0), cls(s.ltv0, (v) => v <= r.maxLTV, (v) => v > r.maxLTV), 'ltv0') +
     k('LTV forced', pctf(s.ltvFs0), cls(s.ltvFs0, (v) => v <= r.maxLTV, (v) => v > r.maxLTV), 'ltvFs0') +
-    k(r.dscrBasis === 'monthly' ? 'Min DSCR' : 'Min DSCR 12m', xf(s.dscrTest), cls(s.dscrTest, (v) => v >= r.minDSCR, (v) => v < r.minDSCR), 'dscrTest') +
+    (usesDscr(S.model) ? k(r.dscrBasis === 'monthly' ? 'Min DSCR' : 'Min DSCR 12m', xf(s.dscrTest), cls(s.dscrTest, (v) => v >= r.minDSCR, (v) => v < r.minDSCR), 'dscrTest') : '') +
     k('Cash low pre-exit', money(s.lowCashPre), s.lowCashPre < 0 ? 'bad' : '', 'lowCashPre') +
-    k('InRento IRR', pctf(s.irr, 2), '', 'irr') + k('Lender profit', money(s.profit), '', 'profit') +
-    (() => { const c = issueCounts(), f = s.flags + c.error + c.warn; return `<button class="kpi kpibtn" data-act="goto-check" title="Model checks and credit flags"><div class="l">Checks</div><div class="v ${c.error ? 'bad' : f ? 'warn' : 'good'}">${c.error ? c.error + ' mistake' + (c.error > 1 ? 's' : '') + (f - c.error ? ' · ' + (f - c.error) + ' flag' + (f - c.error > 1 ? 's' : '') : '') : f ? f + ' to check' : 'All OK'}</div></button>`; })();
+    (() => { const a = dealAtMat(s, r); return k(a.refi ? 'Cash at maturity (incl. refi)' : 'Cash at maturity', money(a.v), a.v < -1 ? 'bad' : '', a.refi ? '' : 'cashAtMaturity'); })() +
+    k('InRento fee', money(feeOf(s)), '', 'arrFeeAmt') +
+    (() => { const c = issueCounts(), f = c.error + c.warn; return `<button class="kpi kpibtn" data-act="goto-check" title="Model check: mistakes in how the model is built (dates, missing values, double counting, typos)"><div class="l">Model check</div><div class="v ${c.error ? 'bad' : f ? 'warn' : 'good'}">${c.error ? c.error + ' mistake' + (c.error > 1 ? 's' : '') + (f - c.error ? ' · ' + (f - c.error) + ' to check' : '') : f ? f + ' to check' : 'OK'}</div></button>`; })();
 }
 
 // ---------- dates (ISO strings, working days) ----------

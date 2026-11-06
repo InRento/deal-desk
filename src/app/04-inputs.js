@@ -231,7 +231,6 @@ OUT.iqrail = () => {
   const first = r.tranchesOn && r.tranches.length ? r.tranches[0].amount : s.facility;
   const repay = T.repay(s), cash = T.cash(s);
   const short = -(s.cashAtMaturity + (T.refi && s.refiMax != null ? Math.min(s.refiMax, s.owedAtExit || 0) : 0));
-  let ii = null; try { ii = investorIrr(m); } catch (e) { /* model without cash flows */ }
   const n = lintCount(p, m);
   const row = (l, v, c = '', sub = '', tr = '') => `<div class="iq-r"><span class="l">${l}</span><span class="v ${c}"${tr ? ` data-tr="m:${tr}"` : ''}>${v}</span>${sub ? `<span class="s">${sub}</span>` : ''}</div>`;
   return row(r.tranchesOn ? 'Facility' : 'Loan', money(s.facility), '', r.tranchesOn ? `${money(s.draw0)} at drawdown` : '', 'facility') +
@@ -239,7 +238,6 @@ OUT.iqrail = () => {
     row('Net cash at drawdown', money(s.netCash), s.netCash < -1 ? 'bad' : '', s.netCash < -1 ? 'funding gap' : s.netCash > 1 ? 'paid to the borrower' : 'balanced', 'netCash') +
     row('Borrower lowest cash', money(s.lowCashPre), cash ? '' : 'bad', s.lowCashPreDate ? `in ${mgMonth(s.lowCashPreDate)}` : '', 'lowCashPre') +
     row('Loan repaid', repay ? (s.repaidDate ? mgMonth(s.repaidDate) : 'at maturity') : `${money(Math.max(0, short))} short`, repay ? 'good' : 'bad', `maturity ${mgMonth(s.maturity)}`) +
-    row('Investor IRR', ii == null ? '–' : pctf(ii, 1)) +
     row('InRento fee', money(s.loans ? s.arrFeeAmt : s.fee0 || s.arrFeeAmt), '', '', 'arrFeeAmt') +
     `<button class="btn sm iq-chk ${n ? 'warn' : ''}" data-act="goto-check">${n ? `${n} to check` : 'Model check: OK'}</button>`;
 };
@@ -332,10 +330,9 @@ function trancheLtv(pp) {
   });
 }
 
-function lintTranches(p, m, add) { // LTV after each tranche
-  if (m.r.tranchesOn) {
-    const keep = S.model; S.model = m; let L; try { L = trancheLtv(p); } finally { S.model = keep; }
-    let worst = -1; L.forEach((x, i) => { if (x && x.ltv != null && x.ltv > m.r.maxLTV && (worst < 0 || x.ltv > L[worst].ltv)) worst = i; });
-    if (worst >= 0) { const x = L[worst]; add({ id: 'tranche-ltv', sev: 'warn', title: `LTV reaches ${pctf(x.ltv)} after tranche ${worst + 1} (${dayf(x.date)})`, why: `Above the ${pctf(m.r.maxLTV, 0)} limit. Balance ${money(x.bal)} against collateral ${money(x.bal / x.ltv)} in that month. Lending value LTV ${pctf(x.fs)}. Condition the tranche on sales, extra collateral or an updated (as-completed) valuation.`, tab: 'inputs', keys: [`tranches.${worst}.amount`] }); }
-  }
+function lintTranches(p, m, add) { // a tranche without a date is silently paid out at drawdown
+  if (!m.r.tranchesOn) return;
+  const prog = p.inputs.constrOn && p.inputs.trancheMode === 'progress';
+  const und = p.tranches.map((t, k) => ({ t, k })).filter(({ t }) => E.num(t.amount) > 0 && E.blank(t.date) && !(prog && !E.blank(t.milestone)) && t.trigger !== 'balance');
+  if (und.length) add({ id: 'tranche-nodate', sev: 'error', title: `${und.length === 1 ? `Tranche ${und[0].k + 1}${und[0].t.label ? ` (${und[0].t.label})` : ''} has` : `${und.length} tranches have`} no date`, why: 'A tranche without a date is paid out at drawdown, so LTV, interest and the borrower\'s cash are off. Enter the planned date' + (p.inputs.constrOn ? ' (or release it against works progress).' : '.'), tab: 'inputs', keys: und.map(({ k }) => `tranches.${k}.date`) });
 }

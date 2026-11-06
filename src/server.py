@@ -2,8 +2,8 @@
 """InRento Deal Desk – local server.
 
 Serves the app at http://127.0.0.1:8765. Deals live in the shared Deal Desk folder on Google Drive (a Shared Drive
-synced by Google Drive for Desktop); the SQLite database next to the data folder is only this Mac's index of it plus
-its Gmail cache. Standard library only: no pip installs needed.
+synced by Google Drive for Desktop); the SQLite database next to the data folder is only this Mac's index of it.
+Standard library only: no pip installs needed.
 
     python3 server.py              start the app and open the browser
     python3 server.py --no-browser start without opening a browser
@@ -22,13 +22,14 @@ import random
 import re
 import signal
 import sqlite3
+import subprocess
 import sys
 import threading
 import time
 import uuid
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, parse_qs, quote
+from urllib.parse import urlparse
 
 HERE = os.path.dirname(os.path.abspath(__file__))           # program files (index.html, xlsx)
 DATA = os.environ.get("DEALDESK_DATA") or HERE               # database, documents, backups
@@ -69,7 +70,7 @@ ME = CONFIG["user"]
 DB_PATH = os.path.join(DATA, "drive-index.sqlite")
 NO_DRIVE = ("No shared Deal Desk folder found. Open Google Drive for Desktop, check that the \u201cDeal desk\u201d shared drive "
             "shows in Finder, then reopen Deal Desk.")
-APP_VERSION = "3.24.0"  # bump when the program changes; the launcher restarts an older running server
+APP_VERSION = "3.25.0"  # bump when the program changes; the launcher restarts an older running server
 
 # ---------------------------------------------------------------------------
 # Schema. Input columns keep exactly what was typed. NUMERIC columns store plain
@@ -125,7 +126,7 @@ INPUT_FIELDS = [
     ("dealType", "deal_type", "TEXT"), ("showAll", "show_all_inputs", "INTEGER"), ("intTiming", "interest_timing", "TEXT"),
     ("saleOrder", "sale_proceeds_order", "TEXT"), ("ignoredChecks", "ignored_checks", "JSON"),
     ("fxRate", "fx_rate_per_eur", "NUMERIC"), ("fxDate", "fx_rate_date", "TEXT"), ("sources", "field_sources", "JSON"), ("activeVersion", "active_version_id", "TEXT"),
-    ("gmailLabel", "gmail_label", "TEXT"), ("benefits", "deck_benefits", "TEXT"), ("risks", "deck_risks", "TEXT"), ("deckDesc", "deck_description", "TEXT"),
+    ("benefits", "deck_benefits", "TEXT"), ("risks", "deck_risks", "TEXT"), ("deckDesc", "deck_description", "TEXT"),
     # construction / renovation (v3.13)
     ("constrOn", "construction_on", "INTEGER"), ("worksStart", "works_start_date", "TEXT"), ("worksEnd", "works_completion_date", "TEXT"),
     ("contingency", "works_contingency_pct", "NUMERIC"), ("spendCurve", "works_spend_curve", "TEXT"), ("fundingOrder", "works_funding_order", "TEXT"),
@@ -249,37 +250,6 @@ CREATE TABLE IF NOT EXISTS documents (
   size INTEGER,
   uploaded_at TEXT NOT NULL,
   note TEXT
-);
-CREATE TABLE IF NOT EXISTS mail_messages (
-  gm_msgid TEXT PRIMARY KEY,
-  thrid TEXT NOT NULL,
-  date TEXT,
-  from_addr TEXT, from_name TEXT, to_addrs TEXT, cc_addrs TEXT,
-  subject TEXT, body TEXT, attachments TEXT,
-  initial INTEGER DEFAULT 0,
-  fetched_at TEXT
-);
-CREATE INDEX IF NOT EXISTS ix_mail_thr ON mail_messages(thrid, date);
-CREATE TABLE IF NOT EXISTS mail_labels (
-  label TEXT NOT NULL, uidvalidity INTEGER NOT NULL, uid INTEGER NOT NULL, gm_msgid TEXT NOT NULL,
-  PRIMARY KEY (label, uid)
-);
-CREATE TABLE IF NOT EXISTS mail_allmail (
-  uidvalidity INTEGER NOT NULL, uid INTEGER NOT NULL, gm_msgid TEXT NOT NULL,
-  PRIMARY KEY (uidvalidity, uid)
-);
-CREATE TABLE IF NOT EXISTS mail_threads (
-  thrid TEXT PRIMARY KEY,
-  seen_at TEXT, handled_at TEXT,
-  waiting_for TEXT, waiting_until TEXT, waiting_set_at TEXT,
-  todo_text TEXT
-);
-CREATE TABLE IF NOT EXISTS mail_summaries (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  project_id TEXT NOT NULL,
-  text TEXT NOT NULL,
-  date TEXT,
-  created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS activity (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -555,11 +525,6 @@ def import_json(path, skip_existing=False):
                 drive_touch(pid)
                 n += 1
                 continue
-            if exists and p.get("_appendEmails"):  # add email material without touching the model inputs
-                append_emails(con, pid, p)
-                drive_touch(pid)
-                n += 1
-                continue
             if skip_existing and not p.get("_replace") and exists:
                 continue
             p.setdefault("createdAt", now())
@@ -572,36 +537,6 @@ def import_json(path, skip_existing=False):
     con.close()
     return n
 
-
-def append_emails(con, pid, p):
-    """_appendEmails: email summary, new open items, extra source tags (attached files are no longer stored).
-    The model inputs are not touched."""
-    sm = p.get("_emailSummary")
-    if isinstance(sm, str):
-        sm = {"text": sm}
-    if isinstance(sm, dict) and (sm.get("text") or "").strip():
-        con.execute("INSERT INTO mail_summaries (project_id, text, date, created_at) VALUES (?, ?, ?, ?)",
-                    (pid, sm["text"].strip(), str(sm.get("date") or "")[:10] or None, now()))
-    todos = [t for t in (p.get("_todos") or p.get("todos") or []) if isinstance(t, dict) and (t.get("text") or "").strip()]
-    if todos:
-        have = {(r["text"] or "").strip().lower() for r in con.execute("SELECT text FROM todos WHERE project_id=?", (pid,))}
-        pos = con.execute("SELECT COALESCE(MAX(position), -1) FROM todos WHERE project_id=?", (pid,)).fetchone()[0]
-        fc = [c for _, c, _ in TODO_FIELDS]
-        for t in todos:
-            if t["text"].strip().lower() in have:
-                continue
-            have.add(t["text"].strip().lower())  # also skips repeats within the same file
-            pos += 1
-            t = dict({"done": False, "category": "Open item"}, **t)
-            con.execute(f"INSERT INTO todos (project_id, position, {', '.join(fc)}) VALUES (?, ?{', ?' * len(fc)})",
-                        [pid, pos] + [to_db(t.get(k), ty) for k, _, ty in TODO_FIELDS])
-    src = p.get("_sources") or (p.get("inputs") or {}).get("sources")
-    if isinstance(src, dict) and src:
-        r = con.execute("SELECT field_sources FROM project_inputs WHERE project_id=?", (pid,)).fetchone()
-        cur = json.loads(r["field_sources"] or "{}") if r else {}
-        cur.update(src)
-        con.execute("UPDATE project_inputs SET field_sources=? WHERE project_id=?", (json.dumps(cur), pid))
-    con.execute("UPDATE projects SET updated_at=? WHERE id=?", (now(), pid))
 
 
 def auto_import():
@@ -623,11 +558,6 @@ def auto_import():
         try:
             n = import_json(os.path.join(d, f), skip_existing=True)
             print(f"Imported {n} project(s) from {f}", flush=True)
-            item = read_json(os.path.join(d, f))
-            if isinstance(item, dict) and item.get("id") and "inputs" in item:  # one deal per file: its documents can follow
-                k = inbox_documents(d, f, item["id"], item)
-                if k:
-                    print(f"Moved {k} document(s) from {f[:-5]}/ to the deal", flush=True)
         except (OSError, ValueError) as e:
             print(f"Could not import {f}: {e}", flush=True)
             continue
@@ -654,8 +584,8 @@ def safe_name(name):
 
 # ---------------------------------------------------------------------------
 # Shared folder (Google Drive for Desktop). Each deal lives in <drive>/Deals/<name> (<id>)/ as deal.json,
-# versions/<id>.json and activity/<user>.jsonl; the local SQLite database is only an index of those files plus this
-# user's Gmail cache. SQLite itself never goes on the drive: Drive cannot merge it and two Macs writing corrupt it.
+# versions/<id>.json and activity/<user>.jsonl; the local SQLite database is only an index of those files.
+# SQLite itself never goes on the drive: Drive cannot merge it and two Macs writing corrupt it.
 # Writes are temp file + rename (Drive keeps it as the same file, with its version history). Every deal.json carries
 # a rev; a Mac only writes over the rev it last read, otherwise its copy is set aside as a conflict file.
 # ---------------------------------------------------------------------------
@@ -723,8 +653,6 @@ def export_deal(con, pid):
     p = load_project(con, row)
     m = con.execute("SELECT * FROM metrics WHERE project_id=?", (pid,)).fetchone()
     p["metrics"] = {k: m[c] for k, c in METRIC_FIELDS} if m else None
-    p["emailSummaries"] = [{"text": r["text"], "date": r["date"], "createdAt": r["created_at"]}
-                           for r in con.execute("SELECT * FROM mail_summaries WHERE project_id=? ORDER BY id", (pid,))]
     return p
 
 
@@ -861,10 +789,6 @@ def load_deal(pid, folder, data):
     con = connect()
     with LOCK, con:
         save_project(con, pid, dict(data), from_drive=True)
-        con.execute("DELETE FROM mail_summaries WHERE project_id=?", (pid,))
-        for sm in data.get("emailSummaries") or []:
-            con.execute("INSERT INTO mail_summaries (project_id, text, date, created_at) VALUES (?, ?, ?, ?)",
-                        (pid, sm.get("text") or "", sm.get("date"), sm.get("createdAt") or now()))
         con.execute("DELETE FROM versions WHERE project_id=?", (pid,))
         for v in versions:
             con.execute("INSERT INTO versions (id, project_id, label, created_at, data, metrics, parent_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -1174,102 +1098,11 @@ def import_blocked(path):
     items = [data] if isinstance(data, dict) and "inputs" in data else (list(data.values()) if isinstance(data, dict) else data or [])
     for p in items:
         pid = isinstance(p, dict) and p.get("id")
-        if pid and (p.get("_appendVersions") or p.get("_appendEmails") or p.get("_replace")):
+        if pid and (p.get("_appendVersions") or p.get("_replace")):
             c = SYNC["locks"].get(pid)
             if c and c["user"] != ME:
                 return c["user"]
     return None
-
-
-# ---- Documents: files in Deals/<deal>/Documents/<category>/. Anyone may add them without the lock – files never touch
-# deal.json, so they cannot collide with the holder's edits. Finder and Google Drive work on the same folder.
-DOC_CATEGORIES = ["Teaser, business plan", "Appraisal", "Financial statements", "Legal", "Photos", "Other"]
-UPLOAD_LIMIT = 500 * 1024 * 1024
-DOC_SKIP = re.compile(r"^(\.|~\$|Icon\r)|\.(tmp|part)$")  # hidden files, Office lock files, unfinished copies
-
-
-def docs_root(pid, create=False):
-    con = connect()
-    try:
-        folder = meta_get(con, f"folder:{pid}")
-        if not folder and create:  # a deal not written to the drive yet: its folder starts with its documents
-            r = con.execute("SELECT name FROM projects WHERE id=?", (pid,)).fetchone()
-            if not r:
-                return None
-            folder = folder_for(r["name"], pid)
-            with LOCK, con:
-                meta_set(con, f"folder:{pid}", folder)
-    finally:
-        con.close()
-    if not folder:
-        return None
-    root = os.path.join(deals_dir(), folder, "Documents")
-    if create:
-        os.makedirs(root, exist_ok=True)
-    return root
-
-
-def list_documents(pid):
-    root = docs_root(pid)
-    out = []
-    for base, dirs, files in os.walk(root) if root and os.path.isdir(root) else []:
-        dirs[:] = sorted(x for x in dirs if not DOC_SKIP.search(x))
-        for f in sorted(files):
-            if DOC_SKIP.search(f):
-                continue
-            fp = os.path.join(base, f)
-            rel = os.path.relpath(fp, root)
-            st = os.stat(fp)
-            out.append({"path": rel, "name": f, "category": rel.split(os.sep)[0] if os.sep in rel else "",
-                        "size": st.st_size, "modified": dt.datetime.fromtimestamp(st.st_mtime, dt.timezone.utc).isoformat(timespec="seconds")})
-    return out
-
-
-def doc_path(pid, rel):
-    """The file (or the Documents folder itself for "") inside this deal's Documents – never anything outside it."""
-    root = docs_root(pid, create=not rel)
-    if not root:
-        return None
-    full = os.path.realpath(os.path.join(root, rel or ""))
-    top = os.path.realpath(root)
-    return full if (full == top or full.startswith(top + os.sep)) and os.path.exists(full) else None
-
-
-def unique_path(path):
-    stem, ext = os.path.splitext(path)
-    n = 2
-    while os.path.exists(path):
-        path = f"{stem} ({n}){ext}"
-        n += 1
-    return path
-
-
-def inbox_documents(inbox, f, pid, item):
-    """Documents that came with a draft (Inbox/<draft name>/) move into the deal's Documents. Category: the draft's
-    _documents [{file, kind}], else the subfolder they sit in, else Other."""
-    import shutil
-    src = os.path.join(inbox, f[:-5])
-    if not os.path.isdir(src):
-        return 0
-    kinds = {str(x.get("file") or "").replace("/", os.sep): x.get("kind") for x in (item.get("_documents") or []) if isinstance(x, dict)}
-    root = docs_root(pid, create=True)
-    n = 0
-    for base, dirs, files in os.walk(src):
-        for name in files:
-            if DOC_SKIP.search(name):
-                continue
-            rel = os.path.relpath(os.path.join(base, name), src)
-            kind = kinds.get(rel) or kinds.get(name) or (rel.split(os.sep)[0] if os.sep in rel else "Other")
-            dest = unique_path(os.path.join(root, safe_name(re.sub(r"\s*/\s*", ", ", kind)), safe_name(name)))
-            os.makedirs(os.path.dirname(dest), exist_ok=True)
-            shutil.move(os.path.join(base, name), dest)
-            n += 1
-    left = [x for _, _, fs in os.walk(src) for x in fs if not DOC_SKIP.search(x)]
-    if left:
-        shutil.move(src, unique_path(os.path.join(inbox, "Imported", f[:-5])))
-    else:
-        shutil.rmtree(src, ignore_errors=True)
-    return n
 
 
 # ---- Updates. The launcher runs the version named in <drive>/Releases/current.json. A running app learns of a newer one
@@ -1310,15 +1143,12 @@ def drive_status():
             "pending": len(SYNC["dirty"]), "conflicts": sorted(SYNC["conflicts"]), "error": SYNC["error"], "lastSync": SYNC["lastSync"]}
 
 
-MAIL_TABLES = ("mail_messages", "mail_labels", "mail_allmail", "mail_threads")
-
-
-def migrate_to_drive(src, as_user, dry=False, with_mail=False, replace=False):
+def migrate_to_drive(src, as_user, dry=False, replace=False):
     """One-time move of a pre-drive data folder (deals.sqlite, documents/, import/) into the shared folder.
     The source is only read (from a copy). Deals already on the drive are left alone, so it can be run again – unless
     replace: then they are written again from the source (switch-over day), the drive's copy kept as
     deal.before-replace-<time>.json; a deal someone holds the lock on is skipped.
-    Old activity has no user and is credited to as_user. with_mail: also load this Mac's Gmail cache into its local index."""
+    Old activity has no user and is credited to as_user."""
     import shutil
     import tempfile
     if not drive_available():
@@ -1401,18 +1231,6 @@ def migrate_to_drive(src, as_user, dry=False, with_mail=False, replace=False):
             if not dry:
                 shutil.copy2(os.path.join(imp, f), os.path.join(done, f))
     report.append(f"{n} imported draft file(s) {'would be' if dry else ''} copied to Inbox/Imported")
-    if with_mail and not dry:
-        init_db()
-        con = connect()
-        with LOCK, con:
-            for t in MAIL_TABLES:
-                rows = d.execute(f"SELECT * FROM {t}").fetchall()
-                if rows:
-                    con.executemany(f"INSERT OR REPLACE INTO {t} ({', '.join(rows[0].keys())}) VALUES ({', '.join('?' * len(rows[0].keys()))})", [tuple(r) for r in rows])
-            for r in d.execute("SELECT key, value FROM meta WHERE key LIKE 'mail_%'"):
-                meta_set(con, r["key"], r["value"])
-        con.close()
-        report.append("Gmail cache loaded into this Mac's index")
     d.close()
     shutil.rmtree(tmp, ignore_errors=True)
     return report
@@ -1433,29 +1251,7 @@ def init_drive(root):
     return root
 
 
-# ---------------------------------------------------------------------------
-# Email (read-only Gmail over IMAP). The app password lives in the macOS Keychain
-# (via /usr/bin/security), never in SQLite or files. Mailboxes are opened with
-# EXAMINE and bodies fetched with BODY.PEEK, so nothing is ever marked as read.
-# ---------------------------------------------------------------------------
-import base64
-import email
-import email.policy
-import email.utils
-import email.header
-import html as htmlmod
-import imaplib
-import ssl
-import subprocess
-
-KC_SERVICE = "Deal Desk Gmail"
-FAKE_KC = {}  # only used when DEALDESK_FAKE_KEYCHAIN is set (tests on machines without a Keychain)
-MAIL_LOCK = threading.Lock()
-HANDLED_AFTER_DAYS = 14   # first sync of a label: threads quiet for longer are marked handled
-EXPAND_DAYS = 120         # threads active in this window are completed from All Mail (your replies)
-TEXT_LIMIT = 400_000      # bytes of message text fetched per message (attachments are listed, not downloaded)
-
-
+# ---- meta: small key/value settings in this Mac's index
 def meta_get(con, key, default=None):
     r = con.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
     return r["value"] if r else default
@@ -1463,537 +1259,6 @@ def meta_get(con, key, default=None):
 
 def meta_set(con, key, value):
     con.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)", (key, value))
-
-
-def kc_available():
-    return bool(os.environ.get("DEALDESK_FAKE_KEYCHAIN")) or os.path.exists("/usr/bin/security")
-
-
-def kc_get(account):
-    if os.environ.get("DEALDESK_FAKE_KEYCHAIN"):
-        return FAKE_KC.get(account)
-    if not account or not os.path.exists("/usr/bin/security"):
-        return None
-    r = subprocess.run(["/usr/bin/security", "find-generic-password", "-a", account, "-s", KC_SERVICE, "-w"],
-                       capture_output=True, text=True, timeout=15)
-    return r.stdout.rstrip("\n") if r.returncode == 0 and r.stdout.strip() else None
-
-
-def kc_set(account, password):
-    if os.environ.get("DEALDESK_FAKE_KEYCHAIN"):
-        FAKE_KC[account] = password
-        return
-    r = subprocess.run(["/usr/bin/security", "add-generic-password", "-U", "-a", account, "-s", KC_SERVICE,
-                        "-l", KC_SERVICE, "-w", password], capture_output=True, text=True, timeout=15)
-    if r.returncode != 0:
-        raise RuntimeError("Could not save the password in the Keychain: " + (r.stderr.strip() or str(r.returncode)))
-
-
-def kc_delete(account):
-    if os.environ.get("DEALDESK_FAKE_KEYCHAIN"):
-        FAKE_KC.pop(account, None)
-        return
-    if os.path.exists("/usr/bin/security"):
-        subprocess.run(["/usr/bin/security", "delete-generic-password", "-a", account, "-s", KC_SERVICE], capture_output=True, timeout=15)
-
-
-# --- IMAP mailbox names use "modified UTF-7" (RFC 3501 5.1.3)
-def mutf7_encode(s):
-    out, buf = [], []
-
-    def flush():
-        if buf:
-            b = base64.b64encode("".join(buf).encode("utf-16-be")).decode().rstrip("=").replace("/", ",")
-            out.append("&" + b + "-")
-            buf.clear()
-    for ch in s:
-        if 0x20 <= ord(ch) <= 0x7E:
-            flush()
-            out.append("&-" if ch == "&" else ch)
-        else:
-            buf.append(ch)
-    flush()
-    return "".join(out)
-
-
-def mutf7_decode(s):
-    def dec(m):
-        b = m.group(1)
-        if not b:
-            return "&"
-        b = b.replace(",", "/")
-        return base64.b64decode(b + "=" * (-len(b) % 4)).decode("utf-16-be")
-    return re.sub(r"&([^-]*)-", dec, s)
-
-
-def imap_quote(name):
-    return '"' + mutf7_encode(name).replace("\\", "\\\\").replace('"', '\\"') + '"'
-
-
-def ssl_context():
-    ctx = ssl.create_default_context()
-    # the bundled Python may not know where macOS keeps its root certificates
-    for cafile in ("/etc/ssl/cert.pem",):
-        if os.path.exists(cafile):
-            try:
-                ctx.load_verify_locations(cafile)
-            except (ssl.SSLError, OSError):
-                pass
-    if ctx.cert_store_stats().get("x509_ca", 0) == 0 and os.path.exists("/usr/bin/security"):
-        pem = os.path.join(DATA, "runtime", "macos-roots.pem")
-        if not os.path.exists(pem):
-            os.makedirs(os.path.dirname(pem), exist_ok=True)
-            r = subprocess.run(["/usr/bin/security", "find-certificate", "-a", "-p",
-                                "/System/Library/Keychains/SystemRootCertificates.keychain"], capture_output=True, timeout=30)
-            if r.returncode == 0 and r.stdout:
-                with open(pem, "wb") as fh:
-                    fh.write(r.stdout)
-        if os.path.exists(pem):
-            ctx.load_verify_locations(pem)
-    return ctx
-
-
-class MailError(Exception):
-    pass
-
-
-def imap_connect(address):
-    pw = kc_get(address)
-    if not pw:
-        raise MailError("No app password saved for this address. Add it in Email settings.")
-    host = os.environ.get("DEALDESK_IMAP_HOST", "imap.gmail.com")
-    port = int(os.environ.get("DEALDESK_IMAP_PORT", "993"))
-    try:
-        if os.environ.get("DEALDESK_IMAP_PLAIN"):  # tests only (local fake server)
-            con = imaplib.IMAP4(host, port)
-        else:
-            con = imaplib.IMAP4_SSL(host, port, ssl_context=ssl_context(), timeout=30)
-    except (OSError, ssl.SSLError) as e:
-        raise MailError(f"Could not reach Gmail ({e}). Check the internet connection.")
-    try:
-        con.login(address, pw.replace(" ", ""))
-    except imaplib.IMAP4.error as e:
-        raise MailError("Gmail refused the login. Check the address and the app password, and that IMAP is enabled in Gmail settings. (" +
-                        str(e)[:120] + ")")
-    return con
-
-
-LIST_RE = re.compile(rb'\((?P<flags>[^)]*)\) (?P<delim>"(?:[^"\\]|\\.)*"|NIL) (?P<name>.*)$')
-
-
-def imap_list(con):
-    """[(name, flags)] with names decoded from modified UTF-7."""
-    typ, data = con.list()
-    out = []
-    pending = None
-    for item in data or []:
-        if isinstance(item, tuple):  # name sent as a literal
-            m = LIST_RE.match(item[0].split(b"{")[0].rstrip() + b" X")
-            if m:
-                out.append((mutf7_decode(item[1].decode("utf-8", "replace")), m.group("flags").decode()))
-            continue
-        if not item:
-            continue
-        m = LIST_RE.match(item)
-        if not m:
-            continue
-        raw = m.group("name").strip()
-        if raw.startswith(b'"') and raw.endswith(b'"'):
-            raw = raw[1:-1].replace(b'\\"', b'"').replace(b"\\\\", b"\\")
-        out.append((mutf7_decode(raw.decode("utf-8", "replace")), m.group("flags").decode()))
-    return out
-
-
-def examine(con, mailbox):
-    typ, data = con.select(imap_quote(mailbox), readonly=True)  # EXAMINE: read-only
-    if typ != "OK":
-        raise MailError(f"Could not open {mailbox}")
-    uv = con.response("UIDVALIDITY")[1]
-    return int(uv[0]) if uv and uv[0] else 0
-
-
-def uid_search(con, *criteria):
-    typ, data = con.uid("SEARCH", None, *criteria)
-    if typ != "OK" or not data or not data[0]:
-        return []
-    return [int(x) for x in data[0].split()]
-
-
-def uid_ranges(uids):
-    uids = sorted(uids)
-    out, start, prev = [], None, None
-    for u in uids:
-        if start is None:
-            start = prev = u
-        elif u == prev + 1:
-            prev = u
-        else:
-            out.append(f"{start}:{prev}" if start != prev else str(start))
-            start = prev = u
-    if start is not None:
-        out.append(f"{start}:{prev}" if start != prev else str(start))
-    return ",".join(out)
-
-
-def parse_fetch(data):
-    """imaplib FETCH data → list of dicts {uid, msgid, thrid, header, text, meta}."""
-    msgs, cur = [], None
-    for item in data or []:
-        meta = item[0] if isinstance(item, tuple) else item
-        if not isinstance(meta, (bytes, bytearray)):
-            continue
-        if re.match(rb"^\d+ \(", meta):
-            cur = {"meta": b"", "header": b"", "text": b""}
-            msgs.append(cur)
-        if cur is None:
-            continue
-        cur["meta"] += meta + b" "
-        if isinstance(item, tuple):
-            if b"BODY[HEADER]" in meta:
-                cur["header"] = item[1]
-            elif b"BODY[TEXT]" in meta:
-                cur["text"] = item[1]
-    for m in msgs:
-        meta = m["meta"]
-        for k, pat in (("uid", rb"UID (\d+)"), ("msgid", rb"X-GM-MSGID (\d+)"), ("thrid", rb"X-GM-THRID (\d+)")):
-            r = re.search(pat, meta)
-            m[k] = r.group(1).decode() if r else None
-        if m["uid"]:
-            m["uid"] = int(m["uid"])
-        names = re.findall(rb'"(?:FILENAME|NAME|filename|name)" "((?:[^"\\]|\\.)*)"', meta)
-        m["bsnames"] = [decode_words(n.decode("utf-8", "replace")) for n in names]
-    return msgs
-
-
-def decode_words(s):
-    try:
-        return str(email.header.make_header(email.header.decode_header(s)))
-    except Exception:
-        return s
-
-
-def html_to_text(h):
-    h = re.sub(r"(?is)<(script|style|head)[^>]*>.*?</\1>", "", h)
-    h = re.sub(r"(?i)<br\s*/?>", "\n", h)
-    h = re.sub(r"(?i)</(p|div|tr|li|h\d|blockquote)>", "\n", h)
-    h = re.sub(r"(?i)<blockquote[^>]*>", "\n> ", h)
-    h = re.sub(r"<[^>]+>", "", h)
-    h = htmlmod.unescape(h)
-    h = re.sub(r"[ \t\xa0]+\n", "\n", h)
-    return re.sub(r"\n{3,}", "\n\n", h).strip()
-
-
-def parse_message(header, text, bsnames):
-    msg = email.message_from_bytes(header + b"\r\n" + text, policy=email.policy.default)
-    body_plain, body_html, atts = None, None, []
-    for part in msg.walk():
-        if part.is_multipart():
-            continue
-        fn = part.get_filename()
-        disp = (part.get("Content-Disposition") or "").lower()
-        ctype = part.get_content_type()
-        if fn or disp.startswith("attachment"):
-            if fn:
-                atts.append(decode_words(fn))
-            continue
-        try:
-            content = part.get_content()
-        except Exception:
-            try:
-                content = (part.get_payload(decode=True) or b"").decode("utf-8", "replace")
-            except Exception:
-                content = ""
-        if not isinstance(content, str):
-            continue
-        if ctype == "text/plain" and body_plain is None:
-            body_plain = content
-        elif ctype == "text/html" and body_html is None:
-            body_html = content
-    body = body_plain if body_plain and body_plain.strip() else html_to_text(body_html or "")
-    for n in bsnames:
-        if n and n not in atts:
-            atts.append(n)
-    frm = email.utils.parseaddr(str(msg.get("From") or ""))
-    try:
-        d = email.utils.parsedate_to_datetime(str(msg.get("Date")))
-        if d.tzinfo is None:
-            d = d.replace(tzinfo=dt.timezone.utc)
-        date = d.astimezone(dt.timezone.utc).isoformat(timespec="seconds")
-    except Exception:
-        date = now()
-    addrs = lambda h: ", ".join(f"{n} <{a}>" if n else a for n, a in email.utils.getaddresses([str(x) for x in msg.get_all(h, [])]))
-    return {"date": date, "from_addr": (frm[1] or "").lower(), "from_name": decode_words(frm[0] or ""), "to_addrs": addrs("To"),
-            "cc_addrs": addrs("Cc"), "subject": decode_words(str(msg.get("Subject") or "")), "body": (body or "").replace("\r\n", "\n")[:200_000],
-            "attachments": json.dumps(atts)}
-
-
-FETCH_ITEMS = f"(UID X-GM-MSGID X-GM-THRID BODYSTRUCTURE BODY.PEEK[HEADER] BODY.PEEK[TEXT]<0.{TEXT_LIMIT}>)"
-
-
-def fetch_store(con, imap, uids, initial):
-    """Fetch new messages by UID (current mailbox) and store the ones not stored yet. Returns {uid: msgid}.
-    Network reads happen outside the database lock; each batch of 20 is written in one short transaction."""
-    got = {}
-    uids = sorted(uids)
-    for i in range(0, len(uids), 20):
-        typ, data = imap.uid("FETCH", uid_ranges(uids[i:i + 20]), FETCH_ITEMS)
-        if typ != "OK":
-            continue
-        rows = []
-        for m in parse_fetch(data):
-            if not m["uid"] or not m["msgid"]:
-                continue
-            got[m["uid"]] = m["msgid"]
-            r = parse_message(m["header"], m["text"], m["bsnames"])
-            rows.append((m["msgid"], m["thrid"], r["date"], r["from_addr"], r["from_name"], r["to_addrs"], r["cc_addrs"], r["subject"],
-                         r["body"], r["attachments"], 1 if initial else 0, now()))
-        with LOCK, con:
-            con.executemany("""INSERT OR IGNORE INTO mail_messages (gm_msgid, thrid, date, from_addr, from_name, to_addrs, cc_addrs, subject, body, attachments, initial, fetched_at)
-                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", rows)
-    return got
-
-
-def norm_name(s):
-    import unicodedata
-    s = unicodedata.normalize("NFKD", s or "")
-    s = "".join(c for c in s if not unicodedata.combining(c)).lower().replace("ł", "l").replace("ø", "o")
-    return " ".join(re.sub(r"[^a-z0-9]+", " ", s).split())
-
-
-def match_label(name, labels):
-    """Best Gmail label for a project name. Compares the last part of each label (after the last "/"), ignoring
-    accents, case and punctuation, so "New deals/Tarnowskie Gory" matches "Tarnowskie Góry castle complex" and the
-    match survives moving the label between parent folders. Exact matches beat prefix matches; the longest wins."""
-    full, short = norm_name(name), norm_name((name or "").split(",")[0])
-    best, score = None, 0
-    for lb in labels:
-        leaf = norm_name(lb.split("/")[-1])
-        if len(leaf) < 2:
-            continue
-        sc = 0
-        if leaf in (full, short):
-            sc = 1000 + len(leaf)
-        elif len(leaf) >= 4 and (full.startswith(leaf + " ") or short.startswith(leaf + " ")):
-            sc = 500 + len(leaf)
-        elif len(short) >= 4 and leaf.startswith(short + " "):
-            sc = 300 + len(short)
-        if sc > score:
-            best, score = lb, sc
-    return best
-
-
-def project_labels(con, labels=None):
-    """{project id: label}. inputs.gmailLabel wins; otherwise the label that matches the project name (see match_label)."""
-    names = labels if labels is not None else json.loads(meta_get(con, "mail_label_list", "[]") or "[]")
-    out = {}
-    for r in con.execute("SELECT p.id, p.name, i.gmail_label FROM projects p LEFT JOIN project_inputs i ON i.project_id = p.id"):
-        if r["gmail_label"]:
-            out[r["id"]] = r["gmail_label"]
-            continue
-        m = match_label(r["name"], names)
-        if m:
-            out[r["id"]] = m
-    return out
-
-
-def msg_count(con):
-    return con.execute("SELECT COUNT(*) FROM mail_messages").fetchone()[0]
-
-
-def mail_refresh():
-    """Sync every label linked to a project. Only new messages are fetched. Read-only on the Gmail side."""
-    with MAIL_LOCK:
-        con = connect()
-        try:
-            address = meta_get(con, "mail_address")
-            if not address:
-                raise MailError("Add your Gmail address and app password in Email settings first.")
-            imap = imap_connect(address)
-            before = msg_count(con)
-            stats = {"labels": 0}
-            try:
-                boxes = imap_list(imap)
-                labels = sorted(n for n, f in boxes if "\\Noselect" not in f and not n.startswith("[Gmail]") and n != "INBOX")
-                allmail = next((n for n, f in boxes if "\\All" in f), "[Gmail]/All Mail")
-                with LOCK, con:
-                    meta_set(con, "mail_label_list", json.dumps(labels))
-                links = project_labels(con, labels)
-                expand = set()
-                cutoff = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=EXPAND_DAYS)).isoformat(timespec="seconds")
-                for label in sorted(set(links.values())):
-                    if label not in labels:
-                        continue
-                    stats["labels"] += 1
-                    uv = examine(imap, label)
-                    uids = set(uid_search(imap, "ALL"))
-                    first = not con.execute("SELECT 1 FROM meta WHERE key=?", ("mail_synced:" + label,)).fetchone()
-                    with LOCK, con:
-                        con.execute("DELETE FROM mail_labels WHERE label=? AND uidvalidity<>?", (label, uv))
-                        known = {r["uid"] for r in con.execute("SELECT uid FROM mail_labels WHERE label=?", (label,))}
-                        gone = known - uids
-                        if gone:
-                            con.executemany("DELETE FROM mail_labels WHERE label=? AND uid=?", [(label, u) for u in gone])
-                    got = fetch_store(con, imap, uids - known, first)
-                    with LOCK, con:
-                        con.executemany("INSERT OR REPLACE INTO mail_labels (label, uidvalidity, uid, gm_msgid) VALUES (?, ?, ?, ?)",
-                                        [(label, uv, u, mid) for u, mid in got.items()])
-                        if first:
-                            meta_set(con, "mail_synced:" + label, now())
-                    for r in con.execute("""SELECT m.thrid, MAX(m.date) d FROM mail_labels l JOIN mail_messages m ON m.gm_msgid = l.gm_msgid
-                                            WHERE l.label=? GROUP BY m.thrid""", (label,)).fetchall():
-                        if r["d"] and r["d"] >= cutoff:
-                            expand.add((r["thrid"], first))
-                # complete threads from All Mail, so your own replies (and messages outside the label) count
-                if expand:
-                    uv = examine(imap, allmail)
-                    with LOCK, con:
-                        con.execute("DELETE FROM mail_allmail WHERE uidvalidity<>?", (uv,))
-                    known = {r["uid"] for r in con.execute("SELECT uid FROM mail_allmail")}
-                    for thrid, first in sorted(expand):
-                        new = set(uid_search(imap, "X-GM-THRID", thrid)) - known
-                        if not new:
-                            continue
-                        got = {}
-                        typ, data = imap.uid("FETCH", uid_ranges(new), "(UID X-GM-MSGID)")  # ids first; bodies only for messages not stored yet
-                        for m in parse_fetch(data if typ == "OK" else []):
-                            if m["uid"] and m["msgid"] and con.execute("SELECT 1 FROM mail_messages WHERE gm_msgid=?", (m["msgid"],)).fetchone():
-                                got[m["uid"]] = m["msgid"]
-                        got.update(fetch_store(con, imap, new - set(got), first))
-                        with LOCK, con:
-                            con.executemany("INSERT OR REPLACE INTO mail_allmail (uidvalidity, uid, gm_msgid) VALUES (?, ?, ?)",
-                                            [(uv, u, mid) for u, mid in got.items()])
-                        known |= set(got)
-                # first sync: quiet threads start as handled, so old mail does not show up as "reply owed"
-                with LOCK, con:
-                    old = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=HANDLED_AFTER_DAYS)).isoformat(timespec="seconds")
-                    for r in con.execute("""SELECT thrid, MAX(date) d FROM mail_messages WHERE thrid IN
-                                            (SELECT thrid FROM mail_messages GROUP BY thrid HAVING MIN(initial) = 1) GROUP BY thrid""").fetchall():
-                        if r["d"] and r["d"] < old and not con.execute("SELECT 1 FROM mail_threads WHERE thrid=?", (r["thrid"],)).fetchone():
-                            con.execute("INSERT INTO mail_threads (thrid, handled_at) VALUES (?, ?)", (r["thrid"], r["d"]))
-                    meta_set(con, "mail_last_refresh", now())
-                    meta_set(con, "mail_last_error", "")
-            finally:
-                try:
-                    imap.logout()
-                except Exception:
-                    pass
-            stats["new"] = msg_count(con) - before
-            return stats
-        except MailError as e:
-            with LOCK, con:
-                meta_set(con, "mail_last_error", str(e))
-            raise
-        finally:
-            con.close()
-
-
-# --- thread status
-def workdays_between(a, b):
-    """Working days (Mon–Fri) from date a to date b: Monday → Wednesday = 2."""
-    if b <= a:
-        return 0
-    n, d = 0, a
-    while d < b:
-        d += dt.timedelta(days=1)
-        if d.weekday() < 5:
-            n += 1
-    return n
-
-
-def local_date(iso):
-    try:
-        return dt.datetime.fromisoformat(iso).astimezone().date()
-    except Exception:
-        return dt.date.today()
-
-
-def my_addresses(con):
-    a = [meta_get(con, "mail_address") or ""] + [x.strip() for x in (meta_get(con, "mail_aliases") or "").split(",")]
-    return {x.lower() for x in a if x}
-
-
-def gmail_link(address, thrid):
-    try:
-        return f"https://mail.google.com/mail/?authuser={quote(address or '')}#all/{int(thrid):x}"
-    except ValueError:
-        return "https://mail.google.com/"
-
-
-def thread_summary(con, thrid, me, address, today=None):
-    msgs = con.execute("SELECT gm_msgid, date, from_addr, from_name, to_addrs, cc_addrs, subject, initial, fetched_at FROM mail_messages WHERE thrid=? ORDER BY date, gm_msgid", (thrid,)).fetchall()
-    if not msgs:
-        return None
-    st = con.execute("SELECT * FROM mail_threads WHERE thrid=?", (thrid,)).fetchone()
-    st = dict(st) if st else {}
-    today = today or dt.date.today()
-    last = msgs[-1]
-    incoming = [m for m in msgs if m["from_addr"] not in me]
-    last_in = incoming[-1] if incoming else None
-    if st.get("handled_at") and (not last_in or last_in["date"] <= st["handled_at"]):
-        status = "handled"
-    elif st.get("waiting_set_at") and (not last_in or last_in["date"] <= st["waiting_set_at"]):
-        status = "waiting"
-    elif last["from_addr"] in me:
-        status = "waiting"
-    elif workdays_between(local_date(last["date"]), today) >= 2:
-        status = "reply owed"
-    else:
-        status = "new"
-    unseen = any(not m["initial"] and (not st.get("seen_at") or (m["fetched_at"] or "") > st["seen_at"]) for m in incoming)
-    people = []
-    for m in msgs:
-        n = m["from_name"] or m["from_addr"]
-        if m["from_addr"] in me:
-            n = "me"
-        if n and n not in people:
-            people.append(n)
-    subj = next((m["subject"] for m in msgs if m["subject"]), "(no subject)")
-    explicit_wait = bool(st.get("waiting_set_at")) and status == "waiting" and (not last_in or last_in["date"] <= st["waiting_set_at"])
-    return {"thrid": thrid, "subject": subj, "people": people, "count": len(msgs), "lastDate": last["date"], "lastFrom": "me" if last["from_addr"] in me else (last["from_name"] or last["from_addr"]),
-            "status": status, "unseen": unseen, "waitingFor": st.get("waiting_for") if explicit_wait else ("reply from " + (people[0] if people and people[0] != "me" else "them") if status == "waiting" else None),
-            "waitingUntil": st.get("waiting_until") if explicit_wait else None, "handledAt": st.get("handled_at"), "todo": st.get("todo_text"),
-            "link": gmail_link(address, thrid)}
-
-
-def project_threads(con, pid, links=None):
-    links = links if links is not None else project_labels(con)
-    label = links.get(pid)
-    if not label:
-        return label, []
-    me, address = my_addresses(con), meta_get(con, "mail_address")
-    thrids = [r["thrid"] for r in con.execute("""SELECT DISTINCT m.thrid FROM mail_labels l JOIN mail_messages m ON m.gm_msgid = l.gm_msgid WHERE l.label=?""", (label,))]
-    out = [t for t in (thread_summary(con, x, me, address) for x in thrids) if t]
-    out.sort(key=lambda t: t["lastDate"] or "", reverse=True)
-    return label, out
-
-
-def mail_overview():
-    con = connect()
-    try:
-        links = project_labels(con)
-        res = {"configured": bool(meta_get(con, "mail_address")), "lastRefresh": meta_get(con, "mail_last_refresh"),
-               "lastError": meta_get(con, "mail_last_error") or "", "projects": {}, "owed": [], "waitingDue": []}
-        today = dt.date.today().isoformat()
-        for pid in links:
-            label, ts = project_threads(con, pid, links)
-            res["projects"][pid] = {"label": label, "threads": len(ts), "new": sum(1 for t in ts if t["unseen"]),
-                                    "owed": sum(1 for t in ts if t["status"] == "reply owed")}
-            for t in ts:
-                if t["status"] == "reply owed":
-                    res["owed"].append(dict(t, project=pid))
-                if t["status"] == "waiting" and t["waitingUntil"] and t["waitingUntil"] <= today:
-                    res["waitingDue"].append(dict(t, project=pid))
-        return res
-    finally:
-        con.close()
-
-
-def thread_messages(con, thrid):
-    rows = con.execute("SELECT * FROM mail_messages WHERE thrid=? ORDER BY date, gm_msgid", (thrid,)).fetchall()
-    me = my_addresses(con)
-    return [{"id": r["gm_msgid"], "date": r["date"], "from": r["from_name"] or r["from_addr"], "fromAddr": r["from_addr"], "me": r["from_addr"] in me,
-             "to": r["to_addrs"], "cc": r["cc_addrs"], "subject": r["subject"], "body": r["body"] or "", "attachments": json.loads(r["attachments"] or "[]")}
-            for r in rows]
 
 
 # ---------------------------------------------------------------------------
@@ -2063,8 +1328,6 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"error": "forbidden"}, 403)
         if path == "/api/fx":
             return self.send_json(ecb_rates())
-        if path.startswith("/api/mail/"):
-            return self.mail_get(path, parse_qs(url.query))
         if path == "/api/projects":
             if not DRIVE:
                 return self.send_json({"error": NO_DRIVE}, 503)
@@ -2078,11 +1341,6 @@ class Handler(BaseHTTPRequestHandler):
             con.close()
             return self.send_json({"me": ME, "locks": {pid: public_lock(c) for pid, c in SYNC["locks"].items()}, "revs": revs, "storage": drive_status(),
                                    "update": update_status()})
-        m = re.match(r"^/api/projects/([^/]+)/documents$", path)
-        if m:
-            root = docs_root(m.group(1))
-            return self.send_json({"documents": list_documents(m.group(1)), "categories": DOC_CATEGORIES,
-                                   "folder": os.path.relpath(root, DRIVE) if root else None})
         m = re.match(r"^/api/projects/([^/]+)$", path)
         if m:
             got = [p for p in all_projects() if p["id"] == m.group(1)]
@@ -2105,133 +1363,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(rows)
         self.send_json({"error": "not found"}, 404)
 
-    # ---- email (read-only Gmail)
-    def mail_get(self, path, q):
-        con = connect()
-        try:
-            if path == "/api/mail/settings":
-                a = meta_get(con, "mail_address") or ""
-                return self.send_json({"address": a, "aliases": meta_get(con, "mail_aliases") or "", "hasPassword": bool(a and kc_get(a)),
-                                       "keychain": kc_available(), "lastRefresh": meta_get(con, "mail_last_refresh"),
-                                       "lastError": meta_get(con, "mail_last_error") or ""})
-            if path == "/api/mail/labels":
-                return self.send_json({"labels": json.loads(meta_get(con, "mail_label_list", "[]") or "[]"), "links": project_labels(con)})
-            if path == "/api/mail/overview":
-                con.close()
-                return self.send_json(mail_overview())
-            m = re.match(r"^/api/mail/project/([^/]+)$", path)
-            if m:
-                label, threads = project_threads(con, m.group(1))
-                sm = con.execute("SELECT text, date, created_at FROM mail_summaries WHERE project_id=? ORDER BY COALESCE(date, created_at) DESC, id DESC LIMIT 1",
-                                 (m.group(1),)).fetchone()
-                return self.send_json({"label": label, "threads": threads, "summary": dict(sm) if sm else None,
-                                       "configured": bool(meta_get(con, "mail_address")), "lastRefresh": meta_get(con, "mail_last_refresh"),
-                                       "lastError": meta_get(con, "mail_last_error") or ""})
-            m = re.match(r"^/api/mail/thread/(\d+)$", path)
-            if m:
-                t = thread_summary(con, m.group(1), my_addresses(con), meta_get(con, "mail_address"))
-                return self.send_json({"thread": t, "messages": thread_messages(con, m.group(1))})
-            if path == "/api/mail/find":  # source tag "Email" → thread containing the snippet
-                pid, needle = (q.get("pid") or [""])[0], (q.get("q") or [""])[0].strip()
-                label, threads = project_threads(con, pid)
-                ids = [t["thrid"] for t in threads]
-                hit = None
-                if needle and ids:
-                    words = re.sub(r"\s+", " ", needle.lower())
-                    for r in con.execute(f"SELECT thrid, body, subject FROM mail_messages WHERE thrid IN ({','.join('?' * len(ids))}) ORDER BY date DESC", ids):
-                        if words in re.sub(r"\s+", " ", ((r["subject"] or "") + " " + (r["body"] or "")).lower()):
-                            hit = r["thrid"]
-                            break
-                return self.send_json({"thrid": hit})
-            return self.send_json({"error": "not found"}, 404)
-        finally:
-            try:
-                con.close()
-            except Exception:
-                pass
-
-    def mail_post(self, path, b):
-        if path == "/api/mail/refresh":
-            try:
-                return self.send_json(dict(ok=True, **mail_refresh()))
-            except MailError as e:
-                return self.send_json({"ok": False, "error": str(e)})
-            except Exception as e:  # network trouble etc.
-                con = connect()
-                with LOCK, con:
-                    meta_set(con, "mail_last_error", f"Refresh failed: {e}")
-                con.close()
-                return self.send_json({"ok": False, "error": f"Refresh failed: {e}"})
-        if path == "/api/mail/test":
-            con = connect()
-            a = meta_get(con, "mail_address")
-            con.close()
-            try:
-                imap = imap_connect(a or "")
-                n = len(imap_list(imap))
-                imap.logout()
-                return self.send_json({"ok": True, "message": f"Connected. {n} labels and folders found."})
-            except MailError as e:
-                return self.send_json({"ok": False, "error": str(e)})
-            except Exception as e:
-                return self.send_json({"ok": False, "error": str(e)})
-        m = re.match(r"^/api/mail/thread/(\d+)$", path)
-        if m:
-            t, act = m.group(1), b.get("action")
-            con = connect()
-            with LOCK, con:
-                if not con.execute("SELECT 1 FROM mail_threads WHERE thrid=?", (t,)).fetchone():
-                    con.execute("INSERT INTO mail_threads (thrid) VALUES (?)", (t,))
-                if act == "seen":
-                    con.execute("UPDATE mail_threads SET seen_at=? WHERE thrid=?", (now(), t))
-                elif act == "handled":
-                    con.execute("UPDATE mail_threads SET handled_at=?, waiting_set_at=NULL, waiting_for=NULL, waiting_until=NULL, seen_at=? WHERE thrid=?", (now(), now(), t))
-                elif act == "reopen":
-                    con.execute("UPDATE mail_threads SET handled_at=NULL, waiting_set_at=NULL, waiting_for=NULL, waiting_until=NULL WHERE thrid=?", (t,))
-                elif act == "waiting":
-                    con.execute("UPDATE mail_threads SET waiting_for=?, waiting_until=?, waiting_set_at=?, handled_at=NULL WHERE thrid=?",
-                                (str(b.get("waitingFor") or "")[:300], str(b.get("waitingUntil") or "")[:10] or None, now(), t))
-                elif act == "todo":
-                    con.execute("UPDATE mail_threads SET todo_text=? WHERE thrid=?", (str(b.get("text") or "")[:500], t))
-                else:
-                    con.close()
-                    return self.send_json({"error": "unknown action"}, 400)
-            con.close()
-            return self.send_json({"ok": True})
-        return self.send_json({"error": "not found"}, 404)
-
     def do_PUT(self):
         path = urlparse(self.path).path
         if not self.same_origin():
             return self.send_json({"error": "forbidden"}, 403)
-        if path == "/api/mail/settings":
-            try:
-                b = self.body()
-            except ValueError:
-                return self.send_json({"error": "bad json"}, 400)
-            con = connect()
-            try:
-                old = meta_get(con, "mail_address") or ""
-                addr = str(b.get("address") or "").strip().lower()
-                if addr and not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", addr):
-                    return self.send_json({"ok": False, "error": "That does not look like an email address."})
-                pw = str(b.get("password") or "").strip()
-                if pw:
-                    if not kc_available():
-                        return self.send_json({"ok": False, "error": "The macOS Keychain is not available."})
-                    kc_set(addr, pw)
-                elif addr != old and old and kc_get(old) and addr:
-                    kc_set(addr, kc_get(old))
-                if b.get("forget") and addr:
-                    kc_delete(addr)
-                with LOCK, con:
-                    meta_set(con, "mail_address", addr)
-                    meta_set(con, "mail_aliases", str(b.get("aliases") or "").strip())
-                return self.send_json({"ok": True, "hasPassword": bool(addr and kc_get(addr))})
-            except (RuntimeError, OSError, subprocess.SubprocessError) as e:
-                return self.send_json({"ok": False, "error": str(e)})
-            finally:
-                con.close()
         m = re.match(r"^/api/projects/([^/]+)$", path)
         if m:
             pid = m.group(1)
@@ -2335,12 +1470,6 @@ class Handler(BaseHTTPRequestHandler):
         path = url.path
         if not self.same_origin():
             return self.send_json({"error": "forbidden"}, 403)
-        if path.startswith("/api/mail/"):
-            try:
-                b = self.body()
-            except ValueError:
-                b = {}
-            return self.mail_post(path, b)
         if path == "/api/backup":
             with LOCK:
                 dest = backup("manual")
@@ -2353,45 +1482,6 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/storage/sync":
             drive_sync(force=True)
             return self.send_json(dict(ok=not SYNC["error"], **drive_status()))
-        m = re.match(r"^/api/projects/([^/]+)/documents/open$", path)
-        if m:
-            try:
-                b = self.body()
-            except ValueError:
-                return self.send_json({"error": "bad json"}, 400)
-            fp = doc_path(m.group(1), str(b.get("path") or ""))
-            if not fp:
-                return self.send_json({"error": "That file is not in this deal's Documents folder (moved or renamed?)."}, 404)
-            cmd = ["/usr/bin/open"] + (["-R"] if b.get("reveal") else []) + [fp]
-            if not os.environ.get("DEALDESK_NO_OPEN"):  # tests check the path without opening Finder
-                subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            return self.send_json({"ok": True, "opened": os.path.relpath(fp, DRIVE), "reveal": bool(b.get("reveal"))})
-        m = re.match(r"^/api/projects/([^/]+)/documents$", path)
-        if m:
-            q = parse_qs(url.query)
-            n = int(self.headers.get("Content-Length") or 0)
-            if n > UPLOAD_LIMIT:
-                return self.send_json({"error": f"Files over {UPLOAD_LIMIT // 2**20} MB: copy them into the deal's Documents folder in Finder."}, 413)
-            root = docs_root(m.group(1), create=True)
-            if not root:
-                return self.send_json({"error": "save the project first"}, 409)
-            cat = safe_name(re.sub(r"\s*/\s*", ", ", (q.get("category") or ["Other"])[0] or "Other"))
-            dest = unique_path(os.path.join(root, cat, safe_name((q.get("name") or ["file"])[0])))
-            os.makedirs(os.path.dirname(dest), exist_ok=True)
-            tmp = os.path.join(os.path.dirname(dest), f".{os.path.basename(dest)}.part")  # hidden until complete
-            with open(tmp, "wb") as fh:
-                left = n
-                while left > 0:
-                    chunk = self.rfile.read(min(left, 1 << 20))
-                    if not chunk:
-                        break
-                    fh.write(chunk)
-                    left -= len(chunk)
-            if left:
-                os.remove(tmp)
-                return self.send_json({"error": "upload interrupted"}, 400)
-            os.replace(tmp, dest)
-            return self.send_json({"ok": True, "path": os.path.relpath(dest, root)})
         m = re.match(r"^/api/projects/([^/]+)/lock$", path)
         if m:
             pid = m.group(1)
@@ -2440,14 +1530,13 @@ def main():
     ap.add_argument("--migrate-from", metavar="FOLDER", help="move the deals of a pre-drive data folder (with deals.sqlite) to the shared folder, then exit")
     ap.add_argument("--as-user", default="Tautvydas", help="with --migrate-from: who old activity is credited to")
     ap.add_argument("--dry-run", action="store_true", help="with --migrate-from: only report what would move")
-    ap.add_argument("--with-mail", action="store_true", help="with --migrate-from: also load that folder's Gmail cache into this Mac's index")
     ap.add_argument("--replace", action="store_true", help="with --migrate-from: write deals already on the drive again from the source (unless locked)")
     a = ap.parse_args()
     if a.init_drive:
         print(f"Shared folder ready: {init_drive(a.init_drive)}\nSettings: {os.path.join(DATA, 'config.json')} – restart Deal Desk to use it.")
         return
     if a.migrate_from:
-        print("\n".join(migrate_to_drive(os.path.expanduser(a.migrate_from), a.as_user, dry=a.dry_run, with_mail=a.with_mail, replace=a.replace)))
+        print("\n".join(migrate_to_drive(os.path.expanduser(a.migrate_from), a.as_user, dry=a.dry_run, replace=a.replace)))
         return
     init_db()
     if a.imp:

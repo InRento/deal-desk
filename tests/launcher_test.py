@@ -239,7 +239,7 @@ class LauncherTest(unittest.TestCase):
     def test_9_switching_a_mac_that_has_the_old_app(self):
         """Tautvydas's Mac: ~/Deal Desk already holds the pre-drive app (deals.sqlite, flat app/ files, runtime/python,
         deals_… backups). The new launcher installs next to it without touching any of that, and the one command he runs
-        moves his deals (newer than the drive's copy) and his Gmail cache in."""
+        moves his deals (newer than the drive's copy) in."""
         import sqlite3
         home = os.path.join(self.tmp, "home-t")
         old = os.path.join(home, "Deal Desk")
@@ -256,8 +256,6 @@ class LauncherTest(unittest.TestCase):
         os.replace(os.path.join(old, "drive-index.sqlite"), db)  # a pre-drive database has the same tables
         con = sqlite3.connect(db)
         con.execute("INSERT INTO projects (id, name, status, updated_at) VALUES ('tg-1', 'His newest deal', 'Underwriting', '2026-11-05')")
-        con.execute("INSERT INTO mail_threads (thrid, handled_at) VALUES ('777', '2026-11-04T10:00:00+00:00')")
-        con.execute("INSERT INTO meta (key, value) VALUES ('mail_address', 'tautvydas@inrento.com')")
         con.commit()
         con.close()
         before = sha(db)
@@ -273,14 +271,10 @@ class LauncherTest(unittest.TestCase):
             self.assertTrue(os.path.exists(os.path.join(old, "backups", "deals_2026-11-03_182651_daily.sqlite")))
             # the command from the switch-over instructions, run in his Terminal
             cmd = ('PY=$(ls -d ~/"Deal Desk"/runtime/*/python/bin/python3 | head -1) && DEALDESK_DATA=~/"Deal Desk" "$PY" '
-                   f'~/"Deal Desk"/app/{ver}/server.py --migrate-from ~/"Deal Desk" --replace --with-mail')
+                   f'~/"Deal Desk"/app/{ver}/server.py --migrate-from ~/"Deal Desk" --replace')
             out = subprocess.run(["/bin/bash", "-c", cmd], env=dict(env, DEALDESK_DRIVE=self.drive), capture_output=True, text=True, timeout=60)
             self.assertEqual(out.returncode, 0, out.stderr)
             self.assertIn("moved: His newest deal (tg-1)", out.stdout)
-            self.assertIn("Gmail cache loaded", out.stdout)
-            idx = sqlite3.connect(os.path.join(old, "drive-index.sqlite"))
-            self.assertEqual(idx.execute("SELECT handled_at FROM mail_threads WHERE thrid='777'").fetchone()[0], "2026-11-04T10:00:00+00:00")
-            idx.close()
             self.assertEqual(sha(db), before, "still untouched after the move")
         finally:
             for pid in subprocess.run(["/usr/sbin/lsof", "-ti", f"tcp:{env['DEALDESK_PORT']}", "-sTCP:LISTEN"], capture_output=True, text=True).stdout.split():

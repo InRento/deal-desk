@@ -2,7 +2,7 @@
 # Release guard. Stops on any failure.
 #  - engine guard: confirmed figures (Skýra, Ustroń, Noa, M23 vs the analysts' models) + every result of every test deal unchanged
 #  - trace test: every "how it is calculated" explanation reproduces the number on screen
-#  - server tests: storage, import folder, backups, origin guard, Gmail read-only, password never on disk
+#  - server tests: storage, import folder, backups, origin guard
 #  - drive tests: two servers on one shared folder (saves, stale copies, rev conflicts, versions, inbox, drive missing)
 #  - launcher tests: release.sh stages/publishes, the real launcher installs, updates, refuses a damaged download, dmg
 #  - with Playwright: app guard (every tab, deck and Excel export unchanged), the browser flow test and the lock test (two Macs)

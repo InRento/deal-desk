@@ -49,6 +49,19 @@ const check = (ok, what, got) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}$
     await fill('inputs.rate', '11.5'); await pg.click('body'); await sleep(400); await tab('inputs');
     check(await pg.inputValue('[data-k="inputs.rate"]') === '11.5', 'a change on the Deal tab shows on Inputs', await pg.inputValue('[data-k="inputs.rate"]'));
     await fill('inputs.rate', '11'); await pg.click('body'); await sleep(400);
+    // 3c tables work like a spreadsheet: select a block, fill down (⌘D), one value pasted into every selected cell, undo in one step
+    await tab('assets'); await pg.click('[data-act="add-asset"]'); await sleep(300); await pg.click('[data-act="add-asset"]'); await sleep(400);
+    const cell = async (k) => (await (await pg.$(`[data-k="${k}"]`)).evaluateHandle((e) => e.closest('td'))).asElement();
+    await (await cell('assets.0.market')).click({ position: { x: 2, y: 2 } }); await (await cell('assets.2.market')).click({ position: { x: 2, y: 2 }, modifiers: ['Shift'] }); await sleep(150);
+    check((await pg.$$('td.gs')).length === 3, 'Shift+click selects a block of cells', String((await pg.$$('td.gs')).length));
+    await pg.keyboard.press('ControlOrMeta+D'); await sleep(500);
+    check((await pg.$$eval('[data-k$=".market"]', (x) => x.map((e) => e.value))).slice(0, 3).join() === '2000000,2000000,2000000', 'fill down copies the top cell', (await pg.$$eval('[data-k$=".market"]', (x) => x.map((e) => e.value))).join());
+    await pg.evaluate(() => { const dt = new DataTransfer(); dt.setData('text/plain', '1 500 000'); document.activeElement.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); });
+    await sleep(500);
+    check((await pg.$$eval('[data-k$=".market"]', (x) => x.map((e) => e.value))).slice(0, 3).join() === '1500000,1500000,1500000', 'one pasted value fills every selected cell', (await pg.$$eval('[data-k$=".market"]', (x) => x.map((e) => e.value))).join());
+    await pg.keyboard.press('ControlOrMeta+Z'); await sleep(500); await pg.keyboard.press('ControlOrMeta+Z'); await sleep(500);
+    check((await pg.$$eval('[data-k$=".market"]', (x) => x.map((e) => e.value))).join() === '2000000,,', 'undo takes back the paste and the fill, one step each', (await pg.$$eval('[data-k$=".market"]', (x) => x.map((e) => e.value))).join());
+    await pg.click('[data-act="del-asset"][data-i="2"]'); await sleep(300); await pg.click('[data-act="del-asset"][data-i="1"]'); await sleep(300);
     // 4 undo / redo
     await tab('inputs'); await fill('inputs.rate', '12'); await pg.click('body'); await sleep(1700);
     await pg.keyboard.press('Meta+z'); await sleep(400); if ((await pg.inputValue('[data-k="inputs.rate"]')) === '12') { await pg.keyboard.press('Control+z'); await sleep(400); }
@@ -86,6 +99,13 @@ const check = (ok, what, got) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}$
     // 7b source added by hand (right-click)
     await tab('inputs'); await pg.click('[data-k="inputs.rate"]', { button: 'right' }); await pg.fill('#se-doc', 'Term sheet'); await pg.fill('#se-loc', 'p.2'); await pg.click('#se-save'); await sleep(300);
     check(await pg.$eval('[data-k="inputs.rate"]', (e) => e.classList.contains('src-doc')), 'a source added by hand marks the field');
+    await pg.click('[data-k="inputs.term"]', { button: 'right' }); await pg.fill('#se-doc', 'Term sheet'); await pg.fill('#se-url', 'drive.google.com/x'); await pg.click('#se-save'); await sleep(200);
+    check(!!(await pg.$('#srcedit')), 'a link without https:// is refused');
+    await pg.fill('#se-url', 'https://drive.google.com/drive/folders/test'); await pg.click('#se-save'); await sleep(300);
+    await pg.click('body'); await pg.focus('[data-k="inputs.term"]'); await sleep(200);
+    await ctx.route('https://drive.google.com/**', (r) => r.fulfill({ body: 'drive' })); // no internet needed
+    const [popup] = await Promise.all([pg.waitForEvent('popup', { timeout: 5000 }), pg.dispatchEvent('#srcchip [data-src="link"]', 'mousedown')]);
+    check(popup.url().startsWith('https://drive.google.com/drive/folders/test'), 'Open link opens the Drive link', popup.url()); await popup.close();
     // 8 Excel
     check(/_model\.xlsx$/.test(await download('[data-act="export-xlsx"]')), 'Excel export downloads');
     // 9 currency view
@@ -102,32 +122,15 @@ const check = (ok, what, got) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}$
     await fill('inputs.payPlan.0.pct', '10'); await fill('inputs.payPlan.0.months', '0'); await sleep(300);
     await tab('assets'); await pg.fill('[data-k="assets.0.contractDate"]', '2027-03-01'); await pg.dispatchEvent('[data-k="assets.0.contractDate"]', 'change'); await sleep(500);
     check((await text('[data-out="a-0-pays"]')).includes('10% Mar 27'), 'payment plan splits the sale into instalments', await text('[data-out="a-0-pays"]'));
-    // 10 Emails tab without Gmail
-    await tab('emails'); check((await text('#tabbody')).length > 0, 'Emails tab renders without Gmail');
+    // 10 no email tab any more
+    check(!(await pg.$('.tab[data-tab="emails"]')), 'no Emails tab');
     // 11 saved to the shared folder
     await sleep(1500); await pg.reload(); await sleep(1200);
     check((await text('#app')).includes('Test Tower, Riga'), 'project is still there after a reload');
     check(fs.readdirSync(path.join(drive, 'Deals')).some((f) => f.startsWith('Test Tower, Riga (') && fs.existsSync(path.join(drive, 'Deals', f, 'deal.json'))), 'project written to the shared folder', JSON.stringify(fs.readdirSync(path.join(drive, 'Deals'))));
-    // 12 documents: added through the file picker, listed by category, stored in the deal's folder on the drive
+    // 12 no Documents tab any more: sources carry a Drive link instead
     await pg.click('tr[data-open] b'); await sleep(600); // the reload above lands on Home
-    await tab('docs'); await sleep(500);
-    check((await text('#tabbody')).includes('No documents yet'), 'Documents tab starts empty');
-    await pg.selectOption('#doccat', 'Appraisal');
-    await pg.setInputFiles('#docfile', [{ name: 'Appraisal Riga 2026.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4 fictional') }, { name: 'Site photo.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('jpg') }]);
-    await sleep(1500);
-    const docsText = await text('#tabbody');
-    check(docsText.includes('Appraisal 2') && docsText.includes('Appraisal Riga 2026.pdf') && docsText.includes('Site photo.jpg'), 'uploaded files are listed under their category', docsText.slice(0, 300));
-    const dealDir = fs.readdirSync(path.join(drive, 'Deals')).find((f) => f.startsWith('Test Tower, Riga ('));
-    check(fs.existsSync(path.join(drive, 'Deals', dealDir, 'Documents', 'Appraisal', 'Appraisal Riga 2026.pdf')), 'file stored in Documents/Appraisal on the drive');
-    if (process.env.SHOTS) { fs.mkdirSync(process.env.SHOTS, { recursive: true }); await pg.screenshot({ path: path.join(process.env.SHOTS, '7-documents-tab.png'), clip: { x: 0, y: 0, width: 1440, height: 520 } }); }
-    // 13 a source tag linked to a document opens that file
-    await tab('inputs'); await pg.click('[data-k="inputs.rate"]', { button: 'right' }); await sleep(600);
-    await pg.selectOption('#se-file', path.join('Appraisal', 'Appraisal Riga 2026.pdf'));
-    if (process.env.SHOTS) await pg.screenshot({ path: path.join(process.env.SHOTS, '8-source-linked-to-file.png'), clip: { x: 0, y: 150, width: 1440, height: 520 } });
-    await pg.click('#se-save'); await sleep(400);
-    await pg.click('[data-k="inputs.rate"]'); await sleep(300);
-    const [req] = await Promise.all([pg.waitForRequest((r) => r.url().endsWith('/documents/open'), { timeout: 5000 }), pg.dispatchEvent('#srcchip [data-src="open"]', 'mousedown')]);
-    check(JSON.parse(req.postData()).path === path.join('Appraisal', 'Appraisal Riga 2026.pdf'), 'source chip Open opens the linked file', req.postData());
+    check(!(await pg.$('.tab[data-tab="docs"]')), 'no Documents tab');
   } catch (e) { console.log('FAIL', e.message); failures++; }
   check(!errors.length, 'no page errors', errors.join(' | '));
   await browser.close(); srv.kill(); await new Promise((r) => srv.exitCode !== null ? r() : srv.on('exit', r)); fs.rmSync(tmp, { recursive: true, force: true }); // the server writes pending deals on exit

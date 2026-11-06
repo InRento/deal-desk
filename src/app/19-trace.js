@@ -38,8 +38,7 @@ function trSource(t) {
 function renderTrace() {
   let el = $('#trpanel');
   const spec = TR.stack[TR.stack.length - 1];
-  if (!spec || S.view !== 'project') { if (el) el.remove(); document.querySelectorAll('.tron').forEach((x) => x.classList.remove('tron')); if (!$('#mailpanel')) { document.body.classList.remove('withdocs'); document.body.style.paddingRight = ''; } return; }
-  if ($('#mailpanel')) closeMail();
+  if (!spec || S.view !== 'project') { if (el) el.remove(); document.querySelectorAll('.tron').forEach((x) => x.classList.remove('tron')); document.body.classList.remove('withdocs'); document.body.style.paddingRight = ''; return; }
   if (!el) { el = document.createElement('aside'); el.id = 'trpanel'; el.setAttribute('aria-label', 'How this number is calculated'); document.body.appendChild(el); }
   document.body.classList.add('withdocs'); document.body.style.paddingRight = TR.w + 'px'; el.style.width = TR.w + 'px';
   document.querySelectorAll('.tron').forEach((x) => x.classList.remove('tron'));

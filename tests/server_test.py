@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Server tests: storage, versions, inbox, backups, same-origin guard and the read-only Gmail sync.
+"""Server tests: storage, versions, inbox, backups and the same-origin guard.
 
-Runs the real server.py on a temporary data folder and a temporary shared folder against a small fake Gmail (tests/fake_imap.py).
+Runs the real server.py on a temporary data folder and a temporary shared folder.
 Standard library only:  python3 tests/server_test.py
 """
 import json
@@ -13,15 +13,11 @@ import sys
 import tempfile
 import time
 import unittest
-import email.utils
-import datetime as dt
 import urllib.error
 import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SERVER = os.path.join(ROOT, "src", "server.py")
-FAKE = os.path.join(ROOT, "tests", "fake_imap.py")
-PASSWORD = "abcdefghijklmnop"
 
 
 def free_port():
@@ -30,33 +26,6 @@ def free_port():
     p = s.getsockname()[1]
     s.close()
     return p
-
-
-def ago(days, hour=8):
-    # the server marks threads quiet for over 14 days as handled on first sync, so dates must follow the clock
-    return email.utils.format_datetime(dt.datetime.now(dt.timezone.utc).replace(hour=hour, minute=0, second=0, microsecond=0) - dt.timedelta(days=days))
-
-
-def raw(subject, frm, to, date, body):
-    return f"From: {frm}\nTo: {to}\nSubject: {subject}\nDate: {date}\nMessage-ID: <{abs(hash(subject + date))}@x>\nContent-Type: text/plain; charset=\"utf-8\"\n\n{body}\n"
-
-
-# Fictional mailbox: one deal label with two threads (one answered by me, one waiting for my reply) and an unrelated label.
-FIXTURE = {
-    "password": PASSWORD,
-    "uidvalidity": 7,
-    "mailboxes": ["INBOX", "[Gmail]", "[Gmail]/All Mail", "[Gmail]/Sent Mail", "New deals/Test Tower, Riga", "Personal"],
-    "messages": [
-        {"msgid": 1001, "thrid": 9001, "labels": ["New deals/Test Tower, Riga"],
-         "raw": raw("Updated price list", "Broker <broker@example.com>", "me@example.com", ago(2), "Please confirm the term sheet by Friday.")},
-        {"msgid": 1002, "thrid": 9002, "labels": ["New deals/Test Tower, Riga"],
-         "raw": raw("Appraisal", "Owner <owner@example.com>", "me@example.com", ago(5), "The valuer sends the appraisal next week.")},
-        {"msgid": 1003, "thrid": 9002, "labels": [],
-         "raw": raw("Re: Appraisal", "Me <me@example.com>", "owner@example.com", ago(1), "Thanks, please send it when you have it.")},
-        {"msgid": 1004, "thrid": 9003, "labels": ["Personal"],
-         "raw": raw("Dinner", "Friend <friend@example.com>", "me@example.com", ago(1, 9), "Not deal related.")},
-    ],
-}
 
 
 class ServerTest(unittest.TestCase):
@@ -68,15 +37,8 @@ class ServerTest(unittest.TestCase):
         os.makedirs(os.path.join(cls.drive, "Inbox"))
         with open(os.path.join(cls.drive, ".deal-desk"), "w") as fh:
             fh.write("{}")
-        fx = os.path.join(cls.tmp, "fixture.json")
-        with open(fx, "w") as fh:
-            json.dump(FIXTURE, fh)
-        cls.imap_log = os.path.join(cls.tmp, "imap.log")
-        cls.imap_port, cls.port = free_port(), free_port()
-        cls.imap = subprocess.Popen([sys.executable, FAKE, str(cls.imap_port), fx, cls.imap_log], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        env = dict(os.environ, DEALDESK_DATA=cls.data, DEALDESK_DRIVE=cls.drive, DEALDESK_USER="me@example.com", DEALDESK_FLUSH_SECONDS="0",
-                   DEALDESK_FAKE_KEYCHAIN="1", DEALDESK_IMAP_HOST="127.0.0.1",
-                   DEALDESK_IMAP_PORT=str(cls.imap_port), DEALDESK_IMAP_PLAIN="1")
+        cls.port = free_port()
+        env = dict(os.environ, DEALDESK_DATA=cls.data, DEALDESK_DRIVE=cls.drive, DEALDESK_USER="me@example.com", DEALDESK_FLUSH_SECONDS="0")
         cls.log = open(os.path.join(cls.tmp, "server.log"), "w")
         cls.srv = subprocess.Popen([sys.executable, SERVER, "--port", str(cls.port), "--no-browser"], env=env, stdout=cls.log, stderr=subprocess.STDOUT)
         for _ in range(50):
@@ -89,9 +51,7 @@ class ServerTest(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.srv.terminate()
-        cls.imap.terminate()
         cls.srv.wait(5)
-        cls.imap.wait(5)
         cls.log.close()
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
@@ -158,13 +118,11 @@ class ServerTest(unittest.TestCase):
         ids = {p["id"]: p for p in self.call("GET", "/api/projects")}
         self.assertIn("t3", ids)
         self.assertEqual(len(self.call("GET", "/api/projects/t3/versions")), 1)
-        # the same file is not imported twice; a later file can append emails without touching the inputs
-        put("b.json", {"id": "t3", "inputs": {"loan": "1"}, "_appendEmails": True, "_emailSummary": {"text": "Owner sends the appraisal.", "date": "2026-10-20"},
-                   "_todos": [{"text": "Chase appraisal"}, {"text": "chase appraisal"}]})
+        # a later file for an existing id is skipped (email material is no longer imported): the deal stays as it was
+        put("b.json", {"id": "t3", "inputs": {"loan": "1"}, "_appendEmails": True, "_todos": [{"text": "Chase appraisal"}]})
         got = {p["id"]: p for p in self.call("GET", "/api/projects")}["t3"]
         self.assertEqual(got["inputs"]["loan"], "500000")
-        self.assertEqual([t["text"] for t in got["todos"]], ["Chase appraisal"])
-        self.assertEqual(self.call("GET", "/api/mail/project/t3")["summary"]["text"], "Owner sends the appraisal.")
+        self.assertEqual(got["todos"], [])
 
     def test_05_backup_and_delete(self):
         self.project("t4", "To delete")
@@ -184,41 +142,10 @@ class ServerTest(unittest.TestCase):
             self.call("GET", "/api/projects", headers={"Origin": "https://evil.example"})
         self.assertEqual(e.exception.code, 403)
 
-    # ---- Gmail, read-only
-    def test_07_gmail_sync(self):
-        self.project()
-        r = self.call("PUT", "/api/mail/settings", {"address": "me@example.com", "password": PASSWORD})
-        self.assertTrue(r["ok"] and r["hasPassword"])
-        self.assertTrue(self.call("POST", "/api/mail/test", {})["ok"])
-        r = self.call("POST", "/api/mail/refresh", {})
-        self.assertTrue(r["ok"], r)
-        labels = self.call("GET", "/api/mail/labels")
-        self.assertIn("New deals/Test Tower, Riga", labels["labels"])
-        self.assertEqual(labels["links"].get("t1"), "New deals/Test Tower, Riga", "label matched to the project by name")
-        d = self.call("GET", "/api/mail/project/t1")
-        threads = {t["thrid"]: t for t in d["threads"]}
-        self.assertEqual(set(threads), {"9001", "9002"}, "personal mail is not pulled in")
-        self.assertEqual(threads["9002"]["status"], "waiting", "my reply from All Mail counts")
-        t = self.call("GET", "/api/mail/thread/9002")
-        self.assertEqual(len(t["messages"]), 2)
-        self.call("POST", "/api/mail/thread/9001", {"action": "handled"})
-        self.assertEqual({t["thrid"]: t for t in self.call("GET", "/api/mail/project/t1")["threads"]}["9001"]["status"], "handled")
-        self.assertEqual(self.call("GET", "/api/mail/find?pid=t1&q=" + urllib.request.quote("term sheet"))["thrid"], "9001")
-        # nothing may change the mailbox: EXAMINE only, BODY.PEEK only, no STORE / COPY / EXPUNGE
-        with open(self.imap_log) as fh:
-            log = fh.read().upper()
-        for bad in (" SELECT ", " STORE ", " COPY ", " EXPUNGE", " MOVE "):
-            self.assertNotIn(bad, log)
-        self.assertNotIn("BODY[", log.replace("BODY.PEEK[", ""))
-        self.assertIn(" EXAMINE ", log)
-
-    def test_08_password_never_written_to_disk(self):
-        self.call("PUT", "/api/mail/settings", {"address": "me@example.com", "password": PASSWORD})
-        for root, _, files in list(os.walk(self.data)) + list(os.walk(self.drive)):
-            for f in files:
-                with open(os.path.join(root, f), "rb") as fh:
-                    self.assertNotIn(PASSWORD.encode(), fh.read(), f)
-
+    def test_07_no_email_routes(self):
+        with self.assertRaises(urllib.error.HTTPError) as e:
+            self.call("GET", "/api/mail/settings")
+        self.assertEqual(e.exception.code, 404)
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
