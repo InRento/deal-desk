@@ -1,40 +1,87 @@
-// Sensitivity tab: margin for error, sale price per m², break-even, scenarios, two-way grid.
-// ---- Sensitivity
+// Sensitivity tab (v3.25): three questions, answer first, detail on request.
+//   1 How much room is there?  – margin for error per driver (bars), collateral value break-evens, DSCR break-even on income deals
+//   2 Your scenarios           – one row each: what changes, outcome, lowest cash, cash at maturity, peak forced-sale LTV; edit in place
+//   3 Two drivers together     – grid preset by deal type (prices × delay, or revenue × costs); your own grid on request
 function tabSens() {
   const p = cur();
   return `<div class="stack">
-  <div class="card"><h2 style="margin-bottom:4px">Margin for error</h2><div class="sub" style="margin-bottom:10px">How far each driver can move before the borrower fails.</div><div data-out="margin"></div></div>
-  <div class="card"><h2 style="margin-bottom:4px">Sale price per m²</h2><div class="sub" style="margin-bottom:10px">How far the average sale price per m² can fall before the loan is no longer covered.</div><div data-out="pricem2"></div></div>
-  <div class="card"><h2 style="margin-bottom:4px">Break-even</h2><div class="sub" style="margin-bottom:10px">How far one driver can move, with everything else at base, before a test fails. DSCR uses the test basis on Inputs 6.</div><div data-out="be"></div></div>
-  <div class="card"><div class="row" style="justify-content:space-between;margin-bottom:8px"><div><h2>Scenario deviations</h2><div class="sub">Each scenario reruns the full monthly cash flow with these deviations on top of the live inputs. Percent changes in %, rate change in percentage points, delays in months.</div></div>
+  <div class="card"><h2 style="margin-bottom:4px">How much room is there?</h2><div class="sub" style="margin-bottom:10px">Each driver moved on its own, everything else at plan.</div><div data-out="room"></div></div>
+  <div class="card"><div class="row" style="justify-content:space-between;margin-bottom:8px"><div><h2>Your scenarios</h2><div class="sub">Each reruns the whole monthly cash flow. Edit to change what a scenario moves.</div></div>
     <div class="row"><button class="btn sm" data-act="add-sc">Add scenario</button><button class="btn sm ghost" data-act="reset-sc">Reset to standard set</button></div></div>
-    <div class="tblwrap"><table class="grid-in sens-in"><thead><tr><th>Driver</th>${p.scenarios.map((s, j) => `<th>${j === 0 ? 'Scenario 1' : `<span class="row" style="justify-content:space-between;flex-wrap:nowrap">Scenario ${j + 1}<button class="xbtn" data-act="del-sc" data-i="${j}" aria-label="Remove scenario">×</button></span>`}</th>`).join('')}</tr></thead>
-    <tbody><tr><td>Name</td>${p.scenarios.map((s, j) => `<td class="name">${inp(`scenarios.${j}.name`, s.name, 'text')}</td>`).join('')}</tr>
-    ${driversOf(p).map((d) => `<tr><td>${d.label} <span class="sub">(${d.unit})</span></td>${p.scenarios.map((s, j) => `<td>${inp(`scenarios.${j}.${d.k}`, s[d.k], d.pct ? 'pct' : 'num')}</td>`).join('')}</tr>`).join('')}</tbody></table></div></div>
-  <div class="card"><h2 style="margin-bottom:8px">Results by scenario</h2><div class="tblwrap" data-out="sensres"></div></div>
-  <div class="card"><h3>Borrower cash balance by scenario</h3><div class="legend" id="lg-sens"></div><div class="chart" id="ch-sens"></div></div>
-  <div class="card"><h3>Borrower net cash flow by calendar year</h3><div class="tblwrap" data-out="sensyr"></div></div><div class="card"><h3>Borrower cash balance at year end</h3><div class="tblwrap" data-out="sensye"></div></div>
-  <div class="card"><h2 style="margin-bottom:8px">Two-way grid</h2><div class="sub" style="margin-bottom:10px">Flex any two drivers with five values each; all other deviations are zero.</div>
+    ${scTable(p)}
+    <h3 style="margin:16px 0 4px">Borrower cash by scenario</h3><div class="legend" id="lg-sens"></div><div class="chart" id="ch-sens"></div>
+    <details class="sc-all" style="margin-top:12px"><summary>All metrics by scenario</summary><div class="tblwrap" data-out="sensres" style="margin-top:8px"></div></details></div>
+  <div class="card"><h2 style="margin-bottom:4px">Two drivers together</h2><div class="sub" style="margin-bottom:10px">Does the loan get repaid when both go wrong at once?</div><div data-out="grid2"></div>
+    <details style="margin-top:12px"${S.ownGrid ? ' open' : ''} data-own-grid><summary>Choose your own two drivers</summary><div style="margin-top:10px">
     <div class="row" style="margin-bottom:10px;align-items:flex-end">
       <label for="g-row"><span class="sub">Rows</span><br><select class="in" id="g-row" data-k="grid.rowDriver" style="width:auto">${driversOf(p).map((d) => `<option value="${d.k}" ${d.k === p.grid.rowDriver ? 'selected' : ''}>${d.label} (${d.unit})</option>`).join('')}</select></label>
       <span class="row" style="gap:4px">${p.grid.rowVals.map((v, k) => inp(`grid.rowVals.${k}`, v, 'num', 'style="width:62px" aria-label="Row value"')).join('')}</span></div>
     <div class="row" style="margin-bottom:14px;align-items:flex-end">
       <label for="g-col"><span class="sub">Columns</span><br><select class="in" id="g-col" data-k="grid.colDriver" style="width:auto">${driversOf(p).map((d) => `<option value="${d.k}" ${d.k === p.grid.colDriver ? 'selected' : ''}>${d.label} (${d.unit})</option>`).join('')}</select></label>
       <span class="row" style="gap:4px">${p.grid.colVals.map((v, k) => inp(`grid.colVals.${k}`, v, 'num', 'style="width:62px" aria-label="Column value"')).join('')}</span></div>
-    <div data-out="grid"></div></div></div>`;
+    <div data-out="grid"></div></div></details></div></div>`;
 }
-OUT.be = () => {
+document.addEventListener('toggle', (e) => { if (e.target.matches && e.target.matches('details[data-own-grid]')) S.ownGrid = e.target.open; }, true);
+
+// ---- 1. how much room
+OUT.room = () => {
+  let M; try { M = marginCalc(); } catch (e) { console.error(e); return '<div class="sub">Could not calculate the margin for error.</div>'; }
   const b = breakEvens(), r = S.model.r;
-  const fmt = (o, unit = '%', scale = 100) => (o == null ? '–' : o.failsAtBase ? '<span class="pill chk">fails at base</span>' : o.beyond ? `more than ${unit === 'pp' ? '50 pp' : '100%'}` : unit === 'pp' ? '+' + (o.value * scale).toFixed(1) + ' pp' : '−' + (o.value * scale).toFixed(1) + '%');
-  const cell = (l, v, s) => `<div class="tile"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div></div>`;
-  return `<div class="tiles">${b.revDscr1 ? cell('Revenue drop to DSCR 1.00×', fmt(b.revDscr1), 'interest and scheduled debt covered exactly') : ''}
-    ${b.revDscrMin ? cell(`Revenue drop to DSCR ${r.minDSCR}×`, fmt(b.revDscrMin), 'policy threshold') : ''}
-    ${cell('Revenue drop until cash runs out', fmt(b.revCash), 'before the final repayment')}
-    ${b.rateDscr1 ? cell('Rate rise to DSCR 1.00×', fmt(b.rateDscr1, 'pp'), 'percentage points') : ''}
-    ${b.saleExit ? cell('Sale price drop until exit uncovered', fmt(b.saleExit), 'cash at maturity turns negative') : ''}
-    ${cell('Value drop to LTV 100% (lending value)', b.valueForced100 == null ? '–' : b.valueForced100 < 0 ? '<span class="pill chk">already above</span>' : '−' + (b.valueForced100 * 100).toFixed(1) + '%', 'facility = lending value')}
-    ${cell(`Value drop to max LTV ${pctf(r.maxLTV, 0)}`, b.valueMaxLTV == null ? '–' : b.valueMaxLTV < 0 ? '<span class="pill chk">already above</span>' : '−' + (b.valueMaxLTV * 100).toFixed(1) + '%', 'market value')}
-    ${cell('Value headroom incl. interest', pctf(b.headroom), 'facility + interest + selling costs')}</div>`;
+  const bar = (d, o, v) => { const w = o.fails ? 0 : Math.min(1, (d.unit === 'months' ? o.x / 18 : o.x / (d.dir < 0 ? 0.5 : 1)) || 0); return `<div class="rm-bar"><i class="mg-bg-${v.tone}" style="width:${(w * 100).toFixed(0)}%"></i></div>`; };
+  const cell = (d, which) => { const o = d[which], v = mgVal(d, o, which); return `<td class="rm-c"><div class="rm-v"><b class="mg-${v.tone}">${esc(v.txt)}</b><span class="sub">${esc(v.abs || '')}</span></div>${bar(d, o, v)}</td>`; };
+  const rows = M.drivers.map((d) => `<tr><td><b>${esc(d.label)}</b><div class="sub">plan: ${esc(d.planText)}</div></td>${cell(d, 'cash')}${cell(d, 'repay')}</tr>`).join('');
+  const pc = (v, none) => (v == null ? '–' : v < 0 ? `<span class="bad-t">${none}</span>` : `−${(v * 100).toFixed(1)}%`);
+  const val = [];
+  if (b.valueForced100 != null) val.push(`<div><span class="l">Collateral value can fall before a forced sale no longer covers the loan</span><b>${pc(b.valueForced100, 'not covered at drawdown')}</b><span class="sub">full facility vs value after the ${pctf(r.haircut, 0)} haircut</span></div>`);
+  if (b.valueMaxLTV != null) val.push(`<div><span class="l">Collateral value can fall before LTV passes the ${pctf(r.maxLTV, 0)} limit</span><b>${pc(b.valueMaxLTV, 'already above the limit')}</b><span class="sub">full facility vs market value</span></div>`);
+  if (b.headroom != null) val.push(`<div><span class="l">Collateral buffer incl. interest</span><b class="${b.headroom < 0.1 ? 'bad-t' : ''}">${pctf(b.headroom)}</b><span class="sub">value can fall before it no longer covers loan + interest + selling costs</span></div>`);
+  if (usesDscr(S.model) && b.revDscrMin) { const o = b.revDscrMin; val.push(`<div><span class="l">Revenue can fall</span><b>${o.failsAtBase ? 'fails at plan' : o.beyond ? 'more than −100%' : `−${(o.value * 100).toFixed(1)}%`}</b><span class="sub">before DSCR drops below ${r.minDSCR}×</span></div>`); }
+  return `${M.drivers.length ? `<div class="mghead">${esc(mgHeadline(M))}</div>
+    <div class="tblwrap" style="margin-top:10px"><table class="rm"><thead><tr><th>Driver</th><th>Before the borrower runs short of cash</th><th>Before InRento is not repaid by maturity</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="note" style="margin-top:6px">Green = plenty of room, amber = some, red = little or none. Grey = the other test breaks first.${M.refi ? ' A bank refinancing at the refinance LTV counts as a source.' : ''}</div>`
+    : '<div class="sub">Add planned sales or revenue to see how far they can move.</div>'}
+    ${val.length ? `<div class="rm-val">${val.join('')}</div>` : ''}`;
+};
+
+// ---- 2. your scenarios: static rows (names and the driver editor keep focus while typing), results refreshed per row
+function scWhat(p, j) {
+  const sc = p.scenarios[j] || {};
+  return driversOf(p).map((d) => { const v = E.num(sc[d.k]); if (!v) return ''; return `${d.label} ${v > 0 ? '+' : '−'}${Math.abs(v)}${d.unit === '%' ? '%' : ' ' + (d.unit === 'mo' ? 'months' : d.unit)}`; }).filter(Boolean).join(' · ') || 'the plan as entered';
+}
+function scTable(p) {
+  const rows = p.scenarios.map((s, j) => {
+    OUT[`sc-w-${j}`] = () => esc(scWhat(cur(), j));
+    OUT[`sc-r-${j}`] = () => scResult(j);
+    const open = S.scOpen === j;
+    return `<tr class="sc-row"><td class="sc-n"><b>${esc(s.name || 'Scenario ' + (j + 1))}</b><div class="sub" data-out="sc-w-${j}"></div></td><td data-out="sc-r-${j}" class="sc-res"></td>
+      <td class="sc-a"><button class="btn sm ghost" data-act="sc-edit" data-i="${j}" aria-expanded="${open}">${open ? 'Done' : 'Edit'}</button>${j ? `<button class="xbtn" data-act="del-sc" data-i="${j}" aria-label="Remove scenario">×</button>` : ''}</td></tr>
+      ${open ? `<tr class="sc-ed"><td colspan="3"><div class="sc-grid"><label><span class="sub">Name</span>${inp(`scenarios.${j}.name`, s.name, 'text')}</label>${driversOf(p).map((d) => `<label><span class="sub">${d.label} (${d.unit})</span>${inp(`scenarios.${j}.${d.k}`, s[d.k], d.pct ? 'pct' : 'num')}</label>`).join('')}</div></td></tr>` : ''}`;
+  }).join('');
+  return `<div class="tblwrap"><table class="sc-t"><thead><tr><th>Scenario</th><th>Outcome</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+function scResult(j) {
+  const x = sensModel().scen[j]; if (!x) return '';
+  const s = x.res.summary, r = S.model.r, o = dealOutcome(s, r), a = dealAtMat(s, r), base = sensModel().scen[0].res.summary;
+  const same = j > 0 && ['lowCashPre', 'cashAtMaturity', 'repaidDate', 'maxLtvFs'].every((k) => Math.abs((s[k] || 0) - (base[k] || 0)) < 0.5);
+  return `<div class="sc-out${same ? ' sc-same' : ''}"><span class="pill sc-${o.tone}">${esc(o.txt)}</span>${same ? '<span class="sub sc-note">Same as the first scenario – it moves nothing this deal has</span>' : ''}
+    <span class="sc-m"><span class="l">Lowest cash</span><b class="${s.lowCashPre < -1 ? 'bad-t' : ''}">${money(s.lowCashPre)}</b><span class="sub">${s.lowCashPreDate ? mgMonth(s.lowCashPreDate) : ''}</span></span>
+    <span class="sc-m"><span class="l">Cash at maturity${a.refi ? ' (incl. refi)' : ''}</span><b class="${a.v < -1 ? 'bad-t' : ''}">${money(a.v)}</b></span>
+    <span class="sc-m"><span class="l">Peak forced-sale LTV</span><b class="${s.maxLtvFs > 1 ? 'bad-t' : ''}">${s.maxLtvFs == null ? '–' : pctf(s.maxLtvFs)}</b></span>
+    <span class="sc-sp">${dealSpark(x.res.rows, s.maturity, o.tone)}</span></div>`;
+}
+document.addEventListener('click', (e) => {
+  const b = e.target.closest && e.target.closest('[data-act="sc-edit"]'); if (!b) return;
+  const j = +b.dataset.i; S.scOpen = S.scOpen === j ? null : j; renderTab();
+});
+
+// ---- 3. two drivers together: the grid that matters for the deal type (same as the committee deck)
+OUT.grid2 = () => {
+  let M; try { M = marginCalc(); } catch (e) { return ''; }
+  const g = M.grid; if (!g) return '<div class="sub">Add planned sales or revenue to see the grid.</div>';
+  const txt = (o) => (o.tone === 'good' ? 'Repaid' : o.tone === 'warn' ? `Needs ${mgK(-o.low)}` : `${mgK(o.short)} short`);
+  return `<div class="tblwrap"><table class="heat g2"><thead><tr><th>${esc(g.rl)} ↓ · ${esc(g.cl)} →</th>${g.cv.map((v) => `<th class="n">${g.cf(v)}</th>`).join('')}</tr></thead><tbody>
+    ${g.cells.map((row, i) => `<tr><td><b>${g.rf(g.rv[i])}</b>${g.rAbs ? `<div class="sub">${g.rAbs(g.rv[i])}</div>` : ''}</td>${row.map((o, k) => `<td class="n g2-${o.tone} ${!i && !k ? 'base' : ''}">${txt(o)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
+    <div class="note" style="margin-top:6px">Repaid = repaid by maturity with no cash shortfall · Needs = the borrower must add cash before maturity, the loan is still repaid · short = still owed to InRento at maturity. Outlined = plan.</div>`;
 };
 const SENS_ROWS = [
   ['Minimum DSCR (test basis)', (s) => xf(s.dscrTest), (s, r) => (s.dscrTest == null ? '' : s.dscrTest >= r.minDSCR ? 'hg' : 'hb')],
@@ -45,7 +92,9 @@ const SENS_ROWS = [
   ['Highest LTV during loan (lending value)', (s) => pctf(s.maxLtvFs), (s, r) => (s.maxLtvFs > r.maxLTV ? 'hb' : '')], ['Exit LTV', (s) => pctf(s.exitLTV)], ['Value headroom', (s) => pctf(s.headroom)],
   ['InRento interest earned', (s) => money(s.interest)], ['Total lender profit', (s) => money(s.profit)], ['InRento IRR (annualised)', (s) => pctf(s.irr, 2)], ['Checks flagged', (s) => s.flags, (s) => (s.flags ? 'hb' : 'hg')],
 ];
-OUT.sensres = () => { const { scen } = sensModel(); const r = S.model.r; return `<table class="heat"><thead><tr><th>Metric</th>${scen.map((s) => `<th class="n">${esc(s.name)}</th>`).join('')}</tr></thead><tbody>${SENS_ROWS.concat(loanSensRows(S.model)).map(([l, f, c]) => `<tr><td>${l}</td>${scen.map((s) => `<td class="n ${c ? c(s.res.summary, r) : ''}">${f(s.res.summary)}</td>`).join('')}</tr>`).join('')}</tbody></table>`; };
+// the full table on screen leaves out returns (InRento earns its fee) and DSCR on deals without income; the Excel export keeps all rows
+const sensRowsShown = () => SENS_ROWS.filter(([l]) => !/IRR|profit|interest earned/i.test(l) && (usesDscr(S.model) || !/DSCR|ICR/.test(l)));
+OUT.sensres = () => { const { scen } = sensModel(); const r = S.model.r; return `<table class="heat"><thead><tr><th>Metric</th>${scen.map((s) => `<th class="n">${esc(s.name)}</th>`).join('')}</tr></thead><tbody>${sensRowsShown().concat(loanSensRows(S.model)).map(([l, f, c]) => `<tr><td>${l}</td>${scen.map((s) => `<td class="n ${c ? c(s.res.summary, r) : ''}">${f(s.res.summary)}</td>`).join('')}</tr>`).join('')}</tbody></table>`; };
 function yearTable(key) {
   const { scen } = sensModel();
   const years = [...new Set(scen.flatMap((s) => s.res.annual.map((y) => y.year)))].sort();
@@ -61,7 +110,7 @@ OUT.grid = () => {
   const lbl = (d, v) => (d.pct ? (E.pct(v) * 100).toFixed(1).replace(/\.0$/, '') + (d.unit === 'pp' ? ' pp' : '%') : E.num(v) + ' mo');
   const isBase = (i, j) => cv(rd, g.rowVals[i]) === 0 && cv(cd, g.colVals[j]) === 0;
   const tbl = (title, f, c) => `<div style="min-width:0"><h3 style="margin-bottom:6px">${title}</h3><div class="tblwrap"><table class="heat"><thead><tr><th>Rows ↓ · columns →</th>${g.colVals.map((v) => `<th class="n">${lbl(cd, v)}</th>`).join('')}</tr></thead><tbody>${res.map((row, i) => `<tr><td class="n">${lbl(rd, g.rowVals[i])}</td>${row.map((s, j) => `<td class="n ${c(s)} ${isBase(i, j) ? 'base' : ''}">${f(s)}</td>`).join('')}</tr>`).join('')}</tbody></table></div></div>`;
-  return `<div class="gridcols">${tbl('Minimum DSCR (test basis)', (s) => xf(s.dscrTest), (s) => (s.dscrTest == null ? '' : s.dscrTest >= r.minDSCR ? 'hg' : 'hb'))}${tbl('Lowest cash before exit', (s) => plain(s.lowCashPre), (s) => (s.lowCashPre < 0 ? 'hb' : 'hg'))}${tbl('Highest LTV (lending value)', (s) => pctf(s.maxLtvFs), (s) => (s.maxLtvFs == null ? '' : s.maxLtvFs <= r.maxLTV ? 'hg' : 'hb'))}${tbl('InRento IRR', (s) => pctf(s.irr, 2), () => '')}</div><div class="note" style="margin-top:6px">Rows: ${esc(rd.label)} (${rd.unit}). Columns: ${esc(cd.label)} (${cd.unit}). Outlined cell = base case.</div>`;
+  return `<div class="gridcols">${usesDscr(S.model) ? tbl('Minimum DSCR (test basis)', (s) => xf(s.dscrTest), (s) => (s.dscrTest == null ? '' : s.dscrTest >= r.minDSCR ? 'hg' : 'hb')) : ''}${tbl('Lowest cash before exit', (s) => plain(s.lowCashPre), (s) => (s.lowCashPre < 0 ? 'hb' : 'hg'))}${tbl('Highest LTV (lending value)', (s) => pctf(s.maxLtvFs), (s) => (s.maxLtvFs == null ? '' : s.maxLtvFs <= r.maxLTV ? 'hg' : 'hb'))}</div><div class="note" style="margin-top:6px">Rows: ${esc(rd.label)} (${rd.unit}). Columns: ${esc(cd.label)} (${cd.unit}). Outlined cell = base case.</div>`;
 };
 
 function flat(o, pre = '', out = {}) {
@@ -70,52 +119,6 @@ function flat(o, pre = '', out = {}) {
   else out[pre] = o === true ? 'Yes' : o === false ? 'No' : o == null ? '' : String(o);
   return out;
 }
-
-// ================= Sale price per m²: how far the average price can fall =================
-// Uniform cut of every planned sale price (the "sale price" stress driver), solved by bisection on the full monthly model.
-let PM2 = { model: null, out: null };
-function pm2Calc() {
-  if (PM2.model === S.model && PM2.out) return PM2.out;
-  const p = mp(), R = E.resolve(p), r = S.model.r;
-  const sales = r.assets.filter((a) => a.salePrice != null && a.saleDate != null);
-  const withArea = sales.filter((a) => a.area > 0);
-  const out = { n: sales.length, nArea: withArea.length };
-  if (!withArea.length) { PM2 = { model: S.model, out }; return out; }
-  const area = withArea.reduce((s, a) => s + a.area, 0), gross = withArea.reduce((s, a) => s + a.salePrice, 0);
-  Object.assign(out, { area, gross, avg: gross / area, allGross: sales.reduce((s, a) => s + a.salePrice, 0) });
-  const run = (x, delay) => E.run(p, Object.assign({}, E.ZERO_DEV, { salePrice: -x, saleDelay: delay || 0 }), { resolved: R });
-  const T = (m) => Math.min(m.r.term, m.rows.length - 1);
-  // 1. principal: the loan balance is cleared by sale proceeds by maturity (no balloon left for the borrower)
-  const principalOk = (m) => m.rows.slice(1, T(m) + 1).reduce((s, x) => s + x.sweep, 0) >= m.summary.facility - 1;
-  // 2. everything owed to the lender (principal, interest not covered by the reserve, capital gain / profit share, fees) is covered by net sale proceeds up to maturity
-  const allOk = (m) => { const s = m.summary, rows = m.rows.slice(1, T(m) + 1); const net = rows.reduce((a, x) => a + x.netSale, 0); const owed = s.facility + s.interest - s.intReserve + s.gains + s.pshare + rows.reduce((a, x) => a + x.extFee + x.prepay + x.exit + x.commit, 0); return net >= owed - 1; };
-  // 3. the borrower's whole cash flow (fee and reserve funding, other income and costs) has no shortfall at maturity
-  const cashOk = (m) => m.summary.cashAtMaturity == null || m.summary.cashAtMaturity >= -1;
-  const solve = (ok, delay) => { if (!ok(run(0, delay))) return { fails: true }; if (ok(run(0.95, delay))) return { x: 0.95, floor: true }; let lo = 0, hi = 0.95; for (let i = 0; i < 36; i++) { const mid = (lo + hi) / 2; if (ok(run(mid, delay))) lo = mid; else hi = mid; } return { x: lo }; };
-  out.rows = [
-    ['Loan principal repaid from sales', 'Sale proceeds swept to InRento clear the loan balance by maturity. Interest is assumed paid by the borrower.', solve(principalOk)],
-    ['Principal + interest + returns covered by sales', 'Net sale proceeds (after selling costs) cover principal, interest not paid from the reserve, capital gain / profit share and fees.', solve(allOk)],
-    ['Same, with every sale 6 months later', 'As above, but each sale happens 6 months after its planned date: more interest, and sales after maturity no longer count.', solve(allOk, 6)],
-    ['Borrower has no cash shortfall at maturity', "All-in: the borrower's whole cash flow, including fee and reserve funding at drawdown and any other income and costs.", solve(cashOk)],
-  ];
-  PM2 = { model: S.model, out };
-  return out;
-}
-OUT.pricem2 = () => {
-  const o = pm2Calc();
-  if (!o.n) return '<div class="sub">No planned sales (sale price and date) in Collateral &amp; sales.</div>';
-  if (!o.nArea) return '<div class="sub">Add the area (m²) of the units for sale in Collateral &amp; sales to see prices per m².</div>';
-  const m2 = (v) => money(v).replace(/^(−?)/, '$1') + '/m²';
-  const head = `<div class="pm2top"><div><div class="l">Average planned price</div><div class="v">${m2(o.avg)}</div><div class="sub">${o.nArea} unit${o.nArea > 1 ? 's' : ''} · ${nf0.format(Math.round(o.area))} m² · ${money(o.gross)}</div></div></div>
-    ${o.nArea < o.n ? `<div class="note" style="margin:6px 0">${o.n - o.nArea} sale${o.n - o.nArea > 1 ? 's' : ''} without an area (${money(o.allGross - o.gross)}) are included in the break-even but not in the per-m² average.</div>` : ''}`;
-  const rows = o.rows.map(([l, why, s]) => {
-    if (s.fails) return `<tr><td><b>${l}</b><div class="sub">${why}</div></td><td class="n bad-t">Fails at planned prices</td><td class="n">–</td><td class="n">–</td></tr>`;
-    const be = o.avg * (1 - s.x);
-    return `<tr><td><b>${l}</b><div class="sub">${why}</div></td><td class="n"><b>${s.floor ? '< ' : ''}${m2(be)}</b></td><td class="n">${s.floor ? '> ' : ''}−${(s.x * 100).toFixed(1)}%</td><td class="n">${s.floor ? '> ' : ''}−${m2(o.avg - be)}</td></tr>`;
-  }).join('');
-  return head + `<div class="tblwrap" style="margin-top:10px"><table><thead><tr><th>Break-even test</th><th class="n">Lowest average price</th><th class="n">Drop vs plan</th><th class="n">Per m²</th></tr></thead><tbody>${rows}</tbody></table></div>
-    <div class="note" style="margin-top:6px">Every planned sale price is cut by the same %, as in the "Sale price" stress. Prices are as entered (net or gross, per the deal), so compare with listings on the same basis. Per-unit break-even prices are in Collateral &amp; sales.</div>`;
-};
 
 // ================= Margin for error: how much can go wrong before the borrower fails =================
 // Two lines for every driver:
@@ -228,12 +231,3 @@ function mgHeadline(M) {
   return 'Before the borrower fails (runs short of cash or cannot repay at maturity), ' + (parts.length > 1 ? parts.slice(0, -1).join(', ') + ' or ' + parts[parts.length - 1] : parts[0]) + ' – each on its own.';
 }
 
-// ---- Sensitivity tab: the same margin card the committee sees
-OUT.margin = () => {
-  let M; try { M = marginCalc(); } catch (e) { console.error(e); return '<div class="sub">Could not calculate the margin for error.</div>'; }
-  if (!M.drivers.length) return '<div class="sub">Add planned sales or revenue to see the margin for error.</div>';
-  const row = (d) => { const c = mgVal(d, d.cash, 'cash'), r = mgVal(d, d.repay, 'repay'); return `<tr><td><b>${esc(d.label)}</b><div class="sub">plan: ${esc(d.planText)}</div></td>
-    <td class="n"><b class="mg-${c.tone}">${esc(c.txt)}</b><div class="sub">${esc(c.abs || '')}</div></td><td class="n"><b class="mg-${r.tone}">${esc(r.txt)}</b><div class="sub">${esc(r.abs || '')}</div></td></tr>`; };
-  return `<div class="mghead">${esc(mgHeadline(M))}</div><div class="tblwrap" style="margin-top:8px"><table><thead><tr><th>Driver (each on its own)</th><th class="n">Before the borrower runs short of cash</th><th class="n">Before InRento is not repaid by maturity</th></tr></thead><tbody>${M.drivers.map(row).join('')}</tbody></table></div>
-    <div class="note" style="margin-top:6px">Grey = not the binding limit (the other test breaks first). "Runs short of cash" = lowest borrower cash before maturity falls below zero (a missed payment or an unpaid cost). "Not repaid" = after repaying everything at maturity the borrower's cash is negative${M.refi ? ' (a bank refinancing at the refinance LTV counts as a source)' : ''}. The committee deck opens with this table.</div>`;
-};

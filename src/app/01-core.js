@@ -240,7 +240,7 @@ function renderKpis() {
     k('LTV forced', pctf(s.ltvFs0), cls(s.ltvFs0, (v) => v <= r.maxLTV, (v) => v > r.maxLTV), 'ltvFs0') +
     (usesDscr(S.model) ? k(r.dscrBasis === 'monthly' ? 'Min DSCR' : 'Min DSCR 12m', xf(s.dscrTest), cls(s.dscrTest, (v) => v >= r.minDSCR, (v) => v < r.minDSCR), 'dscrTest') : '') +
     k('Cash low pre-exit', money(s.lowCashPre), s.lowCashPre < 0 ? 'bad' : '', 'lowCashPre') +
-    k('Cash at maturity', money(s.cashAtMaturity), s.cashAtMaturity < -1 ? 'bad' : '', 'cashAtMaturity') +
+    (() => { const a = dealAtMat(s, r); return k(a.refi ? 'Cash at maturity (incl. refi)' : 'Cash at maturity', money(a.v), a.v < -1 ? 'bad' : '', a.refi ? '' : 'cashAtMaturity'); })() +
     k('InRento fee', money(feeOf(s)), '', 'arrFeeAmt') +
     (() => { const c = issueCounts(), f = c.error + c.warn; return `<button class="kpi kpibtn" data-act="goto-check" title="Model check: mistakes in how the model is built (dates, missing values, double counting, typos)"><div class="l">Model check</div><div class="v ${c.error ? 'bad' : f ? 'warn' : 'good'}">${c.error ? c.error + ' mistake' + (c.error > 1 ? 's' : '') + (f - c.error ? ' · ' + (f - c.error) + ' to check' : '') : f ? f + ' to check' : 'OK'}</div></button>`; })();
 }

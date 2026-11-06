@@ -49,6 +49,19 @@ function drawCharts() {
     $('#lg-main').innerHTML = ser.map((s) => `<span><i class="sw" style="background:${s.color}"></i>${s.name}</span>`).join('');
     lineChart(main, { x: xs, series: ser });
   }
+  const sec = $('#ch-sec'); // Summary: loan against what a sale would bring
+  if (sec) {
+    const ser = [{ name: 'InRento loan balance', color: 'var(--s2)', values: m.rows.map((r) => r.close) }, { name: 'Collateral – market value', color: 'var(--s3)', values: m.rows.map((r) => r.collMkt), dash: 1, w: 1.5 }, { name: 'Collateral – forced-sale value', color: 'var(--bad)', values: m.rows.map((r) => r.collFs), dash: 1, w: 1.5 }];
+    $('#lg-sec').innerHTML = ser.map((s) => `<span><i class="sw" style="background:${s.color}"></i>${s.name}</span>`).join('');
+    lineChart(sec, { x: xs, series: ser, height: 230 });
+  }
+  const cash = $('#ch-cash');
+  if (cash) {
+    const end = m.rows.findIndex((r) => r.date >= m.summary.maturity), n = end > 1 ? end : m.rows.length; // until maturity: the final repayment is "cash at maturity"
+    const ser = [{ name: 'Borrower cash balance until maturity', color: 'var(--s1)', values: m.rows.slice(0, n).map((r) => r.cash) }];
+    $('#lg-cash').innerHTML = ser.map((s) => `<span><i class="sw" style="background:${s.color}"></i>${s.name}</span>`).join('');
+    lineChart(cash, { x: xs.slice(0, n), series: ser, height: 200 });
+  }
   const ncf = $('#ch-ncf');
   if (ncf) lineChart(ncf, { x: xs, series: [{ name: 'Net cash flow', color: 'var(--s1)', values: m.rows.map((r) => r.ncf) }], bars: true, height: 220 });
   const se = $('#ch-sens');

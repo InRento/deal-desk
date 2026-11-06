@@ -43,7 +43,7 @@ function dealOutcome(s, r) {
 }
 OUT.dealres = () => {
   const m = S.model, s = m.summary, r = m.r;
-  const negPre = m.rows.filter((x) => x.p > 0 && x.date <= s.maturity && x.cash < -1).length;
+  const negPre = m.rows.filter((x) => x.p > 0 && x.date < s.maturity && x.cash < -1).length;
   const lim = r.maxLTV, ltvT = (v) => (v == null ? '' : v > lim ? 'bad' : 'good');
   const it = (l, v, sub, tone = '', tr = '') => `<div class="dl-it"><div class="l">${l}</div><div class="v ${tone}"${tr ? ` data-tr="m:${tr}"` : ''}>${v}</div><div class="s">${sub}</div></div>`;
   const pp = (v) => `${+(v * 100).toFixed(2)}%`;
@@ -68,9 +68,8 @@ OUT.dealsc = () => {
   const p = cur(), { scen } = sensModel(), r = S.model.r; if (!scen.length) return '';
   const sig = (s) => JSON.stringify([s.lowCashPre, s.cashAtMaturity, s.repaidDate, s.maxLtv, s.profit].map((v) => (v == null ? null : +(+v).toFixed(2))));
   const base = sig(scen[0].res.summary), shown = scen.filter((x, k) => k === 0 || sig(x.res.summary) !== base), same = scen.length - shown.length;
-  const what = (j) => { const sc = p.scenarios[j] || {}; return driversOf(p).map((d) => { const v = E.num(sc[d.k]); if (!v) return ''; return `${d.label} ${v > 0 ? '+' : '−'}${Math.abs(v)}${d.unit === '%' ? '%' : ' ' + (d.unit === 'mo' ? 'months' : d.unit)}`; }).filter(Boolean).join(' · ') || 'the plan as entered'; };
   const card = (x) => { const s = x.res.summary, o = dealOutcome(s, r), j = scen.indexOf(x);
-    return `<div class="dl-sc ${o.tone}"><div class="dl-sch"><b>${esc(x.name)}</b><span class="dl-dot ${o.tone}"></span></div><div class="sub dl-what">${esc(what(j))}</div>
+    return `<div class="dl-sc ${o.tone}"><div class="dl-sch"><b>${esc(x.name)}</b><span class="dl-dot ${o.tone}"></span></div><div class="sub dl-what">${esc(scWhat(p, j))}</div>
       <div class="dl-sco ${o.tone}">${esc(o.txt)}</div>${dealSpark(x.res.rows, s.maturity, o.tone)}<div class="dl-spl"><span>Borrower cash until maturity · grey line = zero</span></div>
       <div class="dl-scn"><div><span class="l">Lowest cash</span><span class="${s.lowCashPre < -1 ? 'bad' : ''}">${money(s.lowCashPre)}</span></div>${(() => { const a = dealAtMat(s, r); return `<div><span class="l">Cash at maturity${a.refi ? ' (incl. refi)' : ''}</span><span class="${a.v < -1 ? 'bad' : ''}">${money(a.v)}</span></div>`; })()}<div><span class="l">Highest LTV</span><span class="${s.maxLtv > r.maxLTV ? 'bad' : ''}">${s.maxLtv == null ? '–' : pctf(s.maxLtv)}</span></div></div></div>`; };
   return `<div class="dl-scs">${shown.map(card).join('')}</div>${same ? `<div class="sub" style="margin-top:8px">${same} scenario${same > 1 ? 's' : ''} not shown – same result as ${esc(scen[0].name)} on this deal (they move drivers the deal does not have).</div>` : ''}`;
