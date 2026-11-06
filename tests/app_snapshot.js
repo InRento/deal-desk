@@ -34,7 +34,7 @@ const tidy = (t) => t.replace(/Saved to deals\.sqlite|Saved to the shared folder
     await pg.click('[data-act="home"]').catch(() => {}); await sleep(200);
     await pg.click(`tr[data-open="${id}"] b`); await sleep(500);
     for (const t of await pg.$$eval('.tab', (x) => x.map((b) => b.dataset.tab))) {
-      if (t === 'versions' || t === 'docs') continue; // no versions or documents in the test database
+      if (t === 'versions') continue; // no versions in the test database
       await pg.click(`.tab[data-tab="${t}"]`); await sleep(t === 'sens' ? 900 : 300);
       S[`${id} / ${t}`] = tidy(await pg.evaluate(() => document.querySelector('#tabbody').innerText));
     }

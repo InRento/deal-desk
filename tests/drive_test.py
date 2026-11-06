@@ -76,12 +76,6 @@ class Mac:
     def sync(self):
         return self.call("POST", "/api/storage/sync", {})
 
-    def upload(self, pid, name, category, data):
-        q = urllib.parse.urlencode({"name": name, "category": category})
-        req = urllib.request.Request(f"http://127.0.0.1:{self.port}/api/projects/{pid}/documents?{q}", method="POST", data=data)
-        with urllib.request.urlopen(req, timeout=20) as r:
-            return json.loads(r.read())
-
     def stop(self):
         self.proc.send_signal(signal.SIGTERM)
         self.proc.wait(10)
@@ -432,56 +426,13 @@ class DriveTest(unittest.TestCase):
             x.stop()
             y.stop()
 
-    # ---- documents
-    def test_19_documents(self):
-        self.a.save("t19", deal("t19", "With documents"))
-        self.a.sync()
-        self.assertEqual(self.a.call("GET", "/api/projects/t19/documents")["documents"], [])
-        r = self.a.upload("t19", "Appraisal Ober-Haus.pdf", "Appraisal", b"%PDF-1.4 appraisal")
-        self.assertEqual(r["path"], os.path.join("Appraisal", "Appraisal Ober-Haus.pdf"))
-        self.assertEqual(self.a.upload("t19", "Appraisal Ober-Haus.pdf", "Appraisal", b"second")["path"],
-                         os.path.join("Appraisal", "Appraisal Ober-Haus (2).pdf"), "a second file with the same name is kept, not overwritten")
-        with open(os.path.join(self.folder("t19"), "Documents", "Appraisal", "Appraisal Ober-Haus.pdf"), "rb") as fh:
-            self.assertEqual(fh.read(), b"%PDF-1.4 appraisal")
-        # B sees them, and may add one although A holds the deal (files never touch deal.json)
-        self.b.projects()
-        self.b.upload("t19", "Balance sheet 2025.xlsx", "Teaser / business plan", b"xlsx")
-        os.makedirs(os.path.join(self.folder("t19"), "Documents", "Legal"))
-        with open(os.path.join(self.folder("t19"), "Documents", "Legal", "Mortgage draft.docx"), "w") as fh:
-            fh.write("added in Finder")
-        with open(os.path.join(self.folder("t19"), "Documents", "Legal", "~$rtgage draft.docx"), "w") as fh:
-            fh.write("Word lock file")
-        docs = self.a.call("GET", "/api/projects/t19/documents")["documents"]
-        self.assertEqual([(d["category"], d["name"]) for d in docs],
-                         [("Appraisal", "Appraisal Ober-Haus (2).pdf"), ("Appraisal", "Appraisal Ober-Haus.pdf"), ("Legal", "Mortgage draft.docx"),
-                          ("Teaser, business plan", "Balance sheet 2025.xlsx")])
-        self.assertEqual(self.disk("t19")["rev"], 1, "documents do not change the deal")
-        r = self.b.call("POST", "/api/projects/t19/documents/open", {"path": os.path.join("Legal", "Mortgage draft.docx"), "reveal": True})
-        self.assertEqual((r["ok"], r["reveal"]), (True, True))
-        self.refused(lambda: self.b.call("POST", "/api/projects/t19/documents/open", {"path": "../deal.json"}), 404)
-        self.refused(lambda: self.b.call("POST", "/api/projects/t19/documents/open", {"path": "/etc/hosts"}), 404)
-        self.assertTrue(self.a.call("POST", "/api/projects/t19/documents/open", {"path": ""})["opened"].endswith("Documents"), "the folder itself")
-
-    def test_20_documents_from_the_inbox(self):
-        inbox = os.path.join(self.drive, "Inbox")
-        os.makedirs(os.path.join(inbox, "2026-11-05-t20-riga", "Financial statements"))
-        for rel, text in (("appraisal_LT.pdf", "a"), (os.path.join("Financial statements", "FS 2025.xlsx"), "b"), ("photo.jpg", "c")):
-            with open(os.path.join(inbox, "2026-11-05-t20-riga", rel), "w") as fh:
-                fh.write(text)
-        with open(os.path.join(inbox, "2026-11-05-t20-riga.json"), "w") as fh:
-            json.dump(dict(deal("t20", "Riga with documents"), id="t20", _documents=[{"file": "appraisal_LT.pdf", "kind": "Appraisal"}]), fh)
-        self.a.projects()
-        docs = self.a.call("GET", "/api/projects/t20/documents")["documents"]
-        self.assertEqual(sorted((d["category"], d["name"]) for d in docs),
-                         [("Appraisal", "appraisal_LT.pdf"), ("Financial statements", "FS 2025.xlsx"), ("Other", "photo.jpg")])
-        self.assertFalse(os.path.exists(os.path.join(inbox, "2026-11-05-t20-riga")), "the draft's folder is emptied and removed")
-        self.a.sync()
-        self.assertEqual(self.disk("t20")["name"], "Riga with documents", "the deal is written into the folder its documents started")
-        self.assertEqual(len(glob.glob(os.path.join(self.drive, "Deals", "* (t20)"))), 1)
+    def test_19_no_documents_routes(self):
+        self.a.save("t19", deal("t19", "No documents"))
+        self.refused(lambda: self.a.call("GET", "/api/projects/t19/documents"), 404)
+        self.refused(lambda: self.a.call("POST", "/api/projects/t19/documents/open", {"path": ""}), 404)
 
     def test_21_folder_follows_the_deal_name(self):
         self.a.save("t21", deal("t21", "Untitled project"))
-        self.a.upload("t21", "teaser.pdf", "Teaser, business plan", b"pdf")
         self.a.sync()
         self.assertEqual(os.path.basename(self.folder("t21")), "Untitled project (t21)")
         self.assertEqual(self.b.projects()["t21"]["name"], "Untitled project")
@@ -489,12 +440,10 @@ class DriveTest(unittest.TestCase):
         self.a.save("t21", dict(p, name="Vilnius, Ozo 12"))
         self.a.sync()
         self.assertEqual(os.path.basename(self.folder("t21")), "Vilnius, Ozo 12 (t21)")
-        self.assertTrue(os.path.isfile(os.path.join(self.folder("t21"), "Documents", "Teaser, business plan", "teaser.pdf")), "documents move with it")
         self.assertTrue(os.path.isfile(os.path.join(self.folder("t21"), "locks", "a@example.com.json")), "and the lock")
         got = self.b.projects()
         self.assertEqual(got["t21"]["name"], "Vilnius, Ozo 12", "the other Mac follows the rename without losing the deal")
         self.assertEqual(got["t21"]["_lock"]["user"], "a@example.com")
-        self.assertEqual(len(self.b.call("GET", "/api/projects/t21/documents")["documents"]), 1)
 
     def test_22_a_deal_gone_for_one_pass_is_kept(self):
         self.a.save("t22", deal("t22", "Flicker"))

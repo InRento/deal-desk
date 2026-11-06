@@ -9,11 +9,6 @@ function renderProject() {
 function renderTab() {
   const el = $('#tabbody'); if (!el) return;
   if (S.view === 'project' && cur() && !!S.modelMode !== viewEUR()) recalc(true); // results follow the currency switch
-  if (S.tab === 'docs') { // no model outputs on this tab
-    const y = window.scrollY; el.innerHTML = tabDocs(); window.scrollTo(0, y);
-    document.querySelectorAll('#tabs .tab').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.tab === S.tab)));
-    return;
-  }
   const f = { deal: tabDeal, overview: tabOverview, inputs: tabInputs, ops: tabOps, assets: tabAssets, adjust: tabAdjust, summary: tabSummary, cashflow: tabCashflow, sens: tabSens, versions: tabVersions }[S.tab] || tabOverview;
   const y = window.scrollY;
   el.innerHTML = (S.modelErr ? `<div class="banner">The model could not be calculated: ${esc(S.modelErr)}</div>` : '') + f();
