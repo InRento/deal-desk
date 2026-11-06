@@ -1,21 +1,14 @@
-// Deal tab – the page a project opens on, made for the CEO: the proposed structure on the left (read only – the CEO
+// Deal tab – the page a project opens on, made for the CEO: the main terms on the left (read only, `dealTerms` – the CEO
 // asks for changes and the analyst makes them on Inputs), results that apply to every deal type on the right, and the hand-built scenarios
 // from Sensitivity as simple cards underneath. No new calculations: everything comes from the engine run and sensModel().
 { TABS.splice(0, 0, ['deal', 'Deal']); }
-const DEAL_FIELDS = ['loan', 'rate', 'fixedGain', 'profitShare', 'arrFee', 'term', 'drawdown', 'repayType', 'reserveMonths', 'equity', 'saleRepay', 'sweepDefault', 'releasePct', 'haircut'];
-// shorter labels than on Inputs, for a reader who does not build the model
-const DEAL_LBL = { loan: 'Loan amount', rate: 'Interest rate (a year)', fixedGain: 'Capital gain to investors (a year)', profitShare: 'Profit share to investors', arrFee: 'Arrangement fee', term: 'Term', drawdown: 'Drawdown', repayType: 'Repayment', reserveMonths: 'Interest reserve', equity: 'Borrower equity at drawdown', saleRepay: 'Sales repay the loan by', sweepDefault: 'Share of each sale paid to the loan', releasePct: 'Release price (of allocated loan)', haircut: 'Forced-sale haircut' };
-const DEAL_OPT = ['fixedGain', 'profitShare', 'reserveMonths', 'equity'];
 function tabDeal() {
   const p = cur(), i = p.inputs;
-  const FD = {}; for (const [, , fs] of INPUT_SECTIONS()) for (const f of fs) FD[f.k] = f;
-  const sales = p.assets.some((a) => !E.blank(a.salePrice));
-  const show = { loan: !i.tranchesOn, profitShare: !isDefault('profitShare', i.profitShare), saleRepay: sales, sweepDefault: sales && i.saleRepay !== 'release', releasePct: sales && i.saleRepay === 'release' };
-  const nil = (k) => E.blank(i[k]) || (DEAL_OPT.includes(k) && !E.num(i[k])); // optional terms left out when not used
-  const b = baseCcy(p), fields = DEAL_FIELDS.filter((k) => FD[k] && show[k] !== false && !(FD[k].hideIf && FD[k].hideIf(i)) && !nil(k)).map((k) => `<div class="dl-kv"><span>${esc(DEAL_LBL[k] || FD[k].label)}</span><b>${esc(dealVal(FD[k], i[k], b))}</b></div>`).join('');
-  const dd = (v) => { const d = E.parseDate(v); return d == null ? 'no date' : datef(d); };
-  const tr = i.tranchesOn ? `<div class="dl-sub"><div class="dl-h">Drawdown schedule</div><div class="tblwrap"><table><thead><tr><th>Date</th><th class="n">Amount</th><th>Condition</th></tr></thead><tbody>
-    ${p.tranches.map((t) => `<tr><td>${esc(dd(t.date))}</td><td class="n">${money(E.num(t.amount), b)}</td><td class="sub">${esc(t.label || '')}</td></tr>`).join('') || '<tr><td colspan="3" class="sub">No tranches yet.</td></tr>'}
+  const b = baseCcy(p), fields = dealTerms(p, S.modelOrig || S.model, b).map(([l, v]) => `<div class="dl-kv"><span>${esc(l)}</span><b>${esc(v)}</b></div>`).join('');
+  const prog = i.constrOn && i.trancheMode === 'progress';
+  const dd = (t) => { if (prog && !E.blank(t.milestone)) return `at ${fmtP(E.num(t.milestone))}% of the works`; if (t.trigger === 'balance') return `when the loan is below ${money(E.num(t.trigAmount), b)}`; const d = E.parseDate(t.date); return d == null ? 'no date' : datef(d); };
+  const tr = i.tranchesOn ? `<div class="dl-sub"><div class="dl-h">Drawdown schedule</div><div class="tblwrap"><table><thead><tr><th>When</th><th class="n">Amount</th><th>Purpose</th></tr></thead><tbody>
+    ${p.tranches.map((t) => `<tr><td>${esc(dd(t))}</td><td class="n">${money(E.num(t.amount), b)}</td><td class="sub">${esc(t.label || '')}</td></tr>`).join('') || '<tr><td colspan="3" class="sub">No tranches yet.</td></tr>'}
     </tbody><tfoot><tr><td>Facility</td><td class="n" data-out="dl-trtot"></td><td></td></tr></tfoot></table></div></div>` : '';
   const desc = String(i.deckDesc || '').trim();
   return `<div class="dl-head"><div class="dl-sum">${desc ? esc(desc) : '<span class="sub">No description yet – add it on Overview → Committee deck.</span>'}</div>
@@ -27,15 +20,25 @@ function tabDeal() {
     <section class="card" style="margin-top:16px"><div class="row" style="justify-content:space-between;align-items:baseline"><h2>Scenarios${viewEUR() ? ' <span class="sub">in EUR</span>' : ''}</h2><span class="sub">Built on Sensitivity. Each one reruns the full monthly cash flow.</span></div><div data-out="dealsc"></div>
       <div class="dl-chart"><div class="dl-h">Borrower's cash, month by month, until maturity</div><div class="sub" style="margin-bottom:8px">One line per scenario, in the card's colour. Point at a card to pick out its line.</div><div class="chart" id="ch-dl"></div></div></section>`;
 }
-// one input as plain text, in the project currency
-function dealVal(f, v, ccy) {
-  if (E.blank(v)) return '–';
-  if (f.kind === 'money') return money(E.num(v), ccy);
-  if (f.kind === 'pct') return `${fmtP(E.num(v))}%`;
-  if (f.kind === 'date') { const d = E.parseDate(v); return d == null ? String(v) : datef(d); }
-  if (f.kind === 'select') { const o = (f.opts || []).find((x) => String(x[0]) === String(v)); return o ? o[1] : String(v); }
-  if (f.unit === 'mo') return `${fmtP(E.num(v))} months`;
-  return String(v);
+// the terms the CEO asks about, in the project currency: size, price, fee, term, equity and – on renovation deals – the works
+function dealTerms(p, m, ccy) {
+  const i = p.inputs, n = (k) => E.num(i[k]), pc = (v) => `${fmtP(v)}%`, out = [];
+  if (!m) return out;
+  const r = m.r, s = m.summary, rows = m.rows, mo = (d) => (d == null ? '' : datef(d));
+  out.push([i.tranchesOn ? 'Facility' : 'Loan amount', money(s.facility, ccy)]);
+  out.push(['Interest (a year)', n('fixedGain') ? `${pc(n('rate'))} + ${pc(n('fixedGain'))} capital gain` : pc(n('rate'))]);
+  if (n('profitShare') && !isDefault('profitShare', i.profitShare)) out.push(['Profit share to investors', pc(n('profitShare'))]);
+  out.push(['Arrangement fee', pc(n('arrFee'))]);
+  out.push(['Term', `${r.termBase} months, ${mo(rows[0] && rows[0].date)} to ${mo(s.maturity)}`]);
+  out.push(['Borrower equity', s.equity > 0 ? money(s.equity, ccy) : 'None']);
+  const c = i.constrOn && r.constr;
+  if (c) {
+    const a = rows[c.startP], z = rows[c.endP], k = c.endP - c.startP + 1;
+    out.push(['Renovation', a && z ? `${k} month${k === 1 ? '' : 's'}, ${mo(a.date)} to ${mo(z.date)}` : '–']);
+    out.push(['Works budget', money(c.total, ccy)]);
+    if (c.equity > 0) out.push(['Borrower equity for the works', money(c.equity, ccy)]);
+  }
+  return out;
 }
 // the drawdown table is typed in the project currency, so its total is too
 OUT['dl-trtot'] = () => money((S.modelOrig || S.model).r.facility, baseCcy(cur()));
