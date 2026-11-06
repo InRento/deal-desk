@@ -56,7 +56,7 @@ OUT.dealres = () => {
     it('Borrower cash before maturity', s.lowCashPre < -1 ? money(s.lowCashPre) : 'Never negative', s.lowCashPre < -1 ? `lowest in ${mgMonth(s.lowCashPreDate)} · ${negPre} month${negPre === 1 ? '' : 's'} below zero` : `lowest ${money(s.lowCashPre)}${s.lowCashPreDate ? ` in ${mgMonth(s.lowCashPreDate)}` : ''}`, s.lowCashPre < -1 ? 'bad' : 'good', 'lowCashPre') +
     (() => { const a = dealAtMat(s, r); return it('Cash at maturity', money(a.v), `after repaying InRento in full${a.refi ? ` · incl. bank refinancing ${money(a.refi)}` : ''} · maturity ${mgMonth(s.maturity)}`, a.v < -1 ? 'bad' : 'good', a.refi ? '' : 'cashAtMaturity'); })() +
     it('Collateral buffer', s.headroom == null ? '–' : pctf(s.headroom), 'how far collateral value can fall before it no longer covers loan + interest + selling costs', s.headroom == null ? '' : s.headroom < 0.1 ? 'bad' : s.headroom < 0.2 ? 'warn' : 'good', 'headroom') +
-    it('InRento profit', money(s.profit), `IRR ${pctf(s.irr, 1)}`, '', 'profit') + '</div>';
+    it('InRento fee', money(feeOf(s)), s.facility > 0 ? `${pctf(feeOf(s) / s.facility, 1)} of the facility` : '', '', 'arrFeeAmt') + '</div>';
 };
 // borrower cash month by month until maturity (the final repayment itself is the 'cash at maturity' number)
 function dealSpark(rows, mat, tone) {

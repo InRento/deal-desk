@@ -225,6 +225,10 @@ function topBar() {
   <nav class="tabs" role="tablist" id="tabs">${visibleTabs().map((t) => `<button class="tab" role="tab" data-tab="${t[0]}" aria-selected="${S.tab === t[0]}">${t[1]}</button>`).join('')}</nav></div>` : ''}
   </header>`;
 }
+// DSCR only means something when the borrower has operating income (rental and operating deals)
+const usesDscr = (m) => !!m && m.rows.some((x) => (x.revenue || 0) > 0);
+// what InRento earns: the arrangement fee (interest and capital gain go to the investors)
+const feeOf = (s) => s.arrFeeAmt || 0; // over the whole loan, incl. fees on later tranches
 function cls(v, good, bad) { if (v == null) return ''; return good(v) ? 'good' : bad(v) ? 'bad' : ''; }
 function renderKpis() {
   const el = $('#kpis'); if (!el || !S.model) return;
@@ -234,10 +238,11 @@ function renderKpis() {
   el.innerHTML = k(r.tranchesOn ? 'Facility' : 'Loan', money(s.facility), '', 'facility') + k('Rate · term', `${pctf(r.rate, 2)} · ${r.termBase}${r.extOn ? '+' + r.extMonths : ''} m`) +
     k('LTV', pctf(s.ltv0), cls(s.ltv0, (v) => v <= r.maxLTV, (v) => v > r.maxLTV), 'ltv0') +
     k('LTV forced', pctf(s.ltvFs0), cls(s.ltvFs0, (v) => v <= r.maxLTV, (v) => v > r.maxLTV), 'ltvFs0') +
-    k(r.dscrBasis === 'monthly' ? 'Min DSCR' : 'Min DSCR 12m', xf(s.dscrTest), cls(s.dscrTest, (v) => v >= r.minDSCR, (v) => v < r.minDSCR), 'dscrTest') +
+    (usesDscr(S.model) ? k(r.dscrBasis === 'monthly' ? 'Min DSCR' : 'Min DSCR 12m', xf(s.dscrTest), cls(s.dscrTest, (v) => v >= r.minDSCR, (v) => v < r.minDSCR), 'dscrTest') : '') +
     k('Cash low pre-exit', money(s.lowCashPre), s.lowCashPre < 0 ? 'bad' : '', 'lowCashPre') +
-    k('InRento IRR', pctf(s.irr, 2), '', 'irr') + k('Lender profit', money(s.profit), '', 'profit') +
-    (() => { const c = issueCounts(), f = s.flags + c.error + c.warn; return `<button class="kpi kpibtn" data-act="goto-check" title="Model checks and credit flags"><div class="l">Checks</div><div class="v ${c.error ? 'bad' : f ? 'warn' : 'good'}">${c.error ? c.error + ' mistake' + (c.error > 1 ? 's' : '') + (f - c.error ? ' · ' + (f - c.error) + ' flag' + (f - c.error > 1 ? 's' : '') : '') : f ? f + ' to check' : 'All OK'}</div></button>`; })();
+    k('Cash at maturity', money(s.cashAtMaturity), s.cashAtMaturity < -1 ? 'bad' : '', 'cashAtMaturity') +
+    k('InRento fee', money(feeOf(s)), '', 'arrFeeAmt') +
+    (() => { const c = issueCounts(), f = c.error + c.warn; return `<button class="kpi kpibtn" data-act="goto-check" title="Model check: mistakes in how the model is built (dates, missing values, double counting, typos)"><div class="l">Model check</div><div class="v ${c.error ? 'bad' : f ? 'warn' : 'good'}">${c.error ? c.error + ' mistake' + (c.error > 1 ? 's' : '') + (f - c.error ? ' · ' + (f - c.error) + ' to check' : '') : f ? f + ' to check' : 'OK'}</div></button>`; })();
 }
 
 // ---------- dates (ISO strings, working days) ----------

@@ -67,17 +67,6 @@ function ccyNote(p) {
   const res = !(rate > 0) ? '' : viewEUR() ? ' · results shown in <b>EUR</b> at this rate' : S.ccyView === 'EUR' ? ` · results on this tab in ${esc(b)}; Deal, Summary, Cash flow and Sensitivity show EUR` : ` · results in ${esc(b)} – switch to EUR at the top`;
   return `<div class="ccynote"><span>Amounts are entered in <b>${esc(b)}</b> · ${rt}${res}</span>${rate > 0 ? '' : ' <button class="btn sm" data-act="fx-ecb">Get today\'s ECB rate</button>'}</div>`;
 }
-// ---- €5m check (part of the model check)
-function lintEur(p, m, add) { // the EU crowdfunding €5m limit and the exchange rate
-  const s = m.summary, loan = s.facility || 0, b = baseCcy(p), rate = fxRateOf(p);
-  if (loan > 0 && rate > 0) {
-    const eur = loan / rate;
-    if (eur > 5e6) add({ id: 'eur-5m', sev: 'warn', title: `Loan is about €${(eur / 1e6).toFixed(2)}m – above €5m`, why: `${b !== 'EUR' ? `${money(loan)} at ${fmtP(rate)} ${b}/EUR. ` : ''}The EU crowdfunding limit is €5m per project owner over 12 months, counting other offers to the same owner. Reduce, split or structure the loan accordingly.`, tab: 'inputs', keys: ['inputs.loan', 'inputs.fxRate'] });
-    else if (eur > 4.5e6) add({ id: 'eur-5m-near', sev: 'info', title: `Loan is about €${(eur / 1e6).toFixed(2)}m – close to €5m`, why: 'Other offers to the same project owner in the last 12 months count towards the €5m limit.', tab: 'inputs', keys: ['inputs.loan'] });
-    const fd = E.parseDate(p.inputs.fxDate), today = E.parseDate(new Date().toISOString().slice(0, 10));
-    if (b !== 'EUR' && fd != null && fd < today - 45) add({ id: 'fx-old', sev: 'info', title: `Exchange rate is from ${p.inputs.fxDate}`, why: 'Update it with "Get today\'s ECB rate" in Inputs, section 1.', tab: 'inputs', keys: ['inputs.fxRate'] });
-  } else if (loan > 0 && b !== 'EUR') add({ id: 'fx-missing', sev: 'warn', title: 'No EUR exchange rate – the €5m limit cannot be checked', why: `Enter the ${b}/EUR rate in Inputs, section 1, or press "Get today's ECB rate".`, tab: 'inputs', keys: ['inputs.fxRate'] });
-}
 // the PLN / EUR switch in the top bar appears as soon as a non-EUR currency is entered
 document.addEventListener('change', (e) => { // only the switch is redrawn, so a click on a tab in the same moment is not lost
   const k = e.target.dataset && e.target.dataset.k; if (S.view !== 'project' || (k !== 'inputs.currency' && k !== 'inputs.fxRate')) return;

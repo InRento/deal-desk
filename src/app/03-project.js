@@ -54,7 +54,7 @@ function tabOverview() {
         <span class="tlbl">asked</span><input type="date" class="tdate" id="ta-${i}" data-k="todos.${i}.askedOn" value="${esc(t.askedOn || '')}" aria-label="Asked on">${chasePill(t)}</span></div>`).join('')}</div>
       <div class="row" style="margin-top:8px"><input class="search" id="newtodo" placeholder="Add an item and press Enter" style="max-width:none" aria-label="New item"></div>
     </div>
-    <div class="card"><h3>Checks</h3><div data-out="flags"></div></div>
+    <div class="card"><h3>Credit tests</h3><div class="sub" style="margin-bottom:6px">Information, not warnings.</div><div data-out="flags"></div></div>
     <div class="card"><h3>Project file</h3>
       <div class="kv"><span class="k">Created</span><span class="v">${p.createdAt ? new Date(p.createdAt).toLocaleString('en-GB') : '–'}</span></div>
       <div class="kv"><span class="k">Last change</span><span class="v">${p.updatedAt ? new Date(p.updatedAt).toLocaleString('en-GB') : '–'}</span></div>
@@ -64,6 +64,8 @@ function tabOverview() {
     </div>
   </div></div>`;
 }
+// the engine's credit tests (pass / check), shown as information; DSCR only where there is operating income
+const creditTests = (m) => m.summary.checks.filter((c) => usesDscr(m) || !/DSCR/.test(c[0]));
 OUT.tiles = () => {
   const s = S.model.summary, r = S.model.r;
   const t = (l, v, sub = '', c = '') => `<div class="tile"><div class="l">${l}</div><div class="v ${c}">${v}</div><div class="s">${sub}</div></div>`;
@@ -71,12 +73,12 @@ OUT.tiles = () => {
   ${t('Collateral (market)', money(s.mkt0), `forced ${money(s.fs0)}`)}
   ${t('LTV / forced', pctf(s.ltv0), `forced ${pctf(s.ltvFs0)} · max ${pctf(r.maxLTV, 0)}`, s.ltv0 > r.maxLTV ? 'bad' : '')}
   ${t('Max loan by policy', money(s.sizeMax), s.sizeMax != null ? (s.facility <= s.sizeMax + 1 ? 'facility fits' : `over by ${money(s.facility - s.sizeMax)}`) : 'set LTV / coverage', s.sizeMax != null && s.facility > s.sizeMax + 1 ? 'bad' : '')}
-  ${t(r.dscrBasis === 'monthly' ? 'Min DSCR (monthly)' : 'Min DSCR (12 m)', xf(s.dscrTest), `monthly min ${xf(s.minDscr)} · target ${r.minDSCR}×`, s.dscrTest != null && s.dscrTest < r.minDSCR ? 'bad' : '')}
+  ${usesDscr(S.model) ? t(r.dscrBasis === 'monthly' ? 'Min DSCR (monthly)' : 'Min DSCR (12 m)', xf(s.dscrTest), `monthly min ${xf(s.minDscr)} · target ${r.minDSCR}×`, s.dscrTest != null && s.dscrTest < r.minDSCR ? 'bad' : '') : ''}
   ${t('Liquidity reserve need', money(s.reserveNeed), `lowest cash before exit ${datef(s.lowCashPreDate)}`, s.reserveNeed > 0 ? 'bad' : '')}
   ${t('Exit', s.exitLTV != null ? 'LTV ' + pctf(s.exitLTV) : datef(s.maturity), s.paydown ? `pay down ${money(s.paydown)} to refinance` : `repaid ${datef(s.repaidDate)}`, s.paydown > 1 ? 'bad' : '')}
-  ${t('InRento IRR', pctf(s.irr, 2), `simple ${pctf(s.simpleYield)} p.a. · profit ${money(s.profit)}`)}</div>`;
+  ${t('InRento fee', money(feeOf(s)), s.facility > 0 ? `${pctf(feeOf(s) / s.facility, 1)} of the facility` : '')}</div>`;
 };
-OUT.flags = () => `<div class="flaglist">${S.model.summary.checks.map((c) => `<div class="flag"><span class="pill ${c[1] === 'OK' ? 'ok' : 'chk'}">${c[1]}</span><span>${esc(c[0])}${c[2] && c[1] !== 'OK' ? `<div class="sub">${esc(c[2])}</div>` : ''}</span></div>`).join('')}</div>`;
+OUT.flags = () => `<div class="flaglist">${creditTests(S.model).map((c) => `<div class="flag"><span class="pill ${c[1] === 'OK' ? 'ok' : 'chk'}">${c[1]}</span><span>${esc(c[0])}${c[2] && c[1] !== 'OK' ? `<div class="sub">${esc(c[2])}</div>` : ''}</span></div>`).join('')}</div>`;
 
 function brCard(p) {
   const ta = (k, label, ph, rows) => `<label class="brf"><span class="lbl">${label}</span><textarea class="in" id="m-${k}" data-k="inputs.${k}" rows="${rows}" placeholder="${ph}">${esc(p.inputs[k] || '')}</textarea></label>`;
