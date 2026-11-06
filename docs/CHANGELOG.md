@@ -1,4 +1,4 @@
-# Deal Desk – changes after v2.8 (current: v3.25.3, 6 Nov 2026)
+# Deal Desk – changes after v2.8 (current: v3.25.4, 6 Nov 2026)
 
 - v2.9 Currency view: PLN/EUR switch (Summary, Cash flow, Sensitivity, KPIs on those tabs, deck, Excel export); inputs stay in project currency. fxRate/fxDate per project, "Get today's ECB rate" (server /api/fx, urllib then /usr/bin/curl fallback). €5m check in Model check (warn > €5m, note > €4.5m, warn if no rate). app_i.js.
 - v3.0 Documents panel (app_j.js): right-side resizable panel; Word via mammoth 1.8.0 (inlined) with section navigator + search, Excel sheet tabs + search, PDF with #page jump, images; document type in documents.note; import `_documents` from ~/Deal Desk/import/<folder>; source tags in inputs.sources (blue doc / amber assumed / grey edited) with Open/Confirm chip; "N assumed values to confirm" (v3.2.1: "Confirm all" fix button).
@@ -95,3 +95,5 @@ Source of truth: ~/Desktop/Underwriting tool/deal-desk (from v3.11; v2 is retire
   - Guard: engine unchanged. App snapshot re-recorded for the Deal view of the 7 income deals only (new card; no number changed).
 - v3.25.3 (6 Nov 2026) Deal tab, at Tautvydas's request: the proposed structure is read only (plain text with short labels, unused optional terms left out, drawdown schedule as a table) – the CEO asks for changes and the analyst makes them on Inputs. Scenario cards lost their small charts; one chart of borrower cash per scenario until maturity sits under them (card colour = line colour, area below zero shaded, pointing at a card picks out its line). Scenario descriptions joined with commas (also on Sensitivity).
   - Guard: engine unchanged. App snapshot re-recorded for the Deal and Sensitivity views (text and layout only; no number changed).
+- v3.25.4 (6 Nov 2026) Deal tab, at Tautvydas's request: the left side shows only the main terms (`dealTerms`) – loan, interest (with capital gain), arrangement fee, term with dates, borrower equity, and on renovation deals the works period, budget and works equity. Sales sweep, haircut, repayment type and interest reserve left out. Drawdown schedule columns are When (date, works milestone or loan-balance trigger), Amount and Purpose.
+  - Guard: engine unchanged. App snapshot re-recorded for the Deal views only (no number changed).
