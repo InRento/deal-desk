@@ -70,7 +70,7 @@ ME = CONFIG["user"]
 DB_PATH = os.path.join(DATA, "drive-index.sqlite")
 NO_DRIVE = ("No shared Deal Desk folder found. Open Google Drive for Desktop, check that the \u201cDeal desk\u201d shared drive "
             "shows in Finder, then reopen Deal Desk.")
-APP_VERSION = "3.25.3"  # bump when the program changes; the launcher restarts an older running server
+APP_VERSION = "3.25.4"  # bump when the program changes; the launcher restarts an older running server
 
 # ---------------------------------------------------------------------------
 # Schema. Input columns keep exactly what was typed. NUMERIC columns store plain
