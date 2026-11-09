@@ -14,6 +14,10 @@ run() { # run <name> <command…>: show failures and the last line, remember the
   if "$@" > "$LOG" 2>&1; then tail -1 "$LOG"; else grep -v '^ok' "$LOG" | tail -25; echo "$name FAILED"; fail=1; fi
 }
 ./build.sh || exit 1
+# browser for the Playwright tests: Google Chrome when installed (Playwright's own download can hang on macOS while
+# extracting), else Playwright's Chromium (npx playwright install chromium). CHROMIUM=<path> overrides both.
+GC="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+if [ -z "$CHROMIUM" ] && [ -x "$GC" ]; then export CHROMIUM="$GC"; fi
 echo "Running every test – takes several minutes; each line appears when its test finishes."
 if command -v node >/dev/null 2>&1; then run "Engine guard" node tests/engine_test.js; run "Trace test" node tests/trace_test.js
 else echo "node not installed – engine guard cannot run (brew install node)"; fail=1; fi
@@ -26,6 +30,6 @@ if command -v node >/dev/null 2>&1 && node -e "require('playwright')" >/dev/null
   run "Lock browser test" node tests/lock_ui_test.js
   run "Update browser test" node tests/update_ui_test.js
 else echo "Playwright not installed – the app guard and the browser tests cannot run. Install once in this folder:"
-  echo "  npm install && npx playwright install chromium"; fail=1; fi
+  echo "  npm install   (Google Chrome is used as the browser when installed; else also: npx playwright install chromium)"; fail=1; fi
 rm -f "$LOG"
 [ $fail = 0 ] && echo "ALL TESTS PASSED" || { echo "TESTS FAILED – do not release"; exit 1; }
