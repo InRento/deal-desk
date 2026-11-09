@@ -96,24 +96,22 @@ function dealOutcome(s, r) {
     : !cash ? { tone: 'warn', txt: `Repaid, but the borrower needs ${money(-s.lowCashPre)} extra by ${mgMonth(s.lowCashPreDate)}` }
     : { tone: 'good', txt: `Repaid ${s.repaidDate ? mgMonth(s.repaidDate) : 'at maturity'}, no cash shortfall` };
 }
-OUT.dealres = () => {
+OUT.dealres = () => { // plain numbers, no notes under them (Tautvydas, 9 Nov) – the terms are on the left, the details on Summary
   const m = S.model, s = m.summary, r = m.r;
-  const negPre = m.rows.filter((x) => x.p > 0 && x.date < s.maturity && x.cash < -1).length;
   const lim = r.maxLTV, ltvT = (v) => (v == null ? '' : v > lim ? 'bad' : 'good');
-  const it = (l, v, sub, tone = '', tr = '') => `<div class="dl-it"><div class="l">${l}</div><div class="v ${tone}"${tr ? ` data-tr="m:${tr}"` : ''}>${v}</div><div class="s">${sub}</div></div>`;
-  const pk = peakOf(m, 'ltv'), a = dealAtMat(s, r), fee = feeOf(s), pp = (v) => `${+(v * 100).toFixed(2)}%`;
-  const part = r.tranchesOn && s.draw0 < s.facility - 1;
+  const it = (l, v, tone = '', tr = '') => `<div class="dl-it"><div class="l">${l}</div><div class="v ${tone}"${tr ? ` data-tr="m:${tr}"` : ''}>${v}</div></div>`;
+  const pk = peakOf(m, 'ltv'), a = dealAtMat(s, r), fee = feeOf(s);
   return '<div class="dl-grid">' +
-    it(r.tranchesOn ? 'Facility' : 'Loan', money(s.facility), `${r.termBase} months at ${pp(r.rate)}${r.gain ? ` + ${pp(r.gain)}` : ''} a year${part ? `, ${mgK(s.draw0)} drawn at the start` : ''}`, '', 'facility') +
-    (s.netCash < -1 ? it('Funding gap at drawdown', money(-s.netCash), 'not covered by loan and equity', 'bad', 'netCash') : '') +
-    it('LTV at drawdown', s.mkt0 > 0 ? pctf(s.ltv0) : '–', s.mkt0 > 0 ? `${part ? `${pctf(s.draw0 / s.mkt0)} on the amount drawn, ` : ''}limit ${pctf(lim, 0)}` : 'no collateral value yet', ltvT(s.ltv0), 'ltv0') +
-    it('Forced-sale LTV at drawdown', s.fs0 > 0 ? pctf(s.ltvFs0) : '–', s.fs0 > 0 ? `after a ${pctf(r.haircut, 0)} haircut` : '', ltvT(s.ltvFs0), 'ltvFs0') +
-    it('Highest LTV', pk ? pctf(pk.ltv) : '–', pk ? `in ${mgMonth(pk.date)}, forced sale ${pctf(pk.ltvFs)}` : '', ltvT(pk && pk.ltv), 'maxLtv') +
-    it('Borrower cash before maturity', s.lowCashPre < -1 ? money(s.lowCashPre) : 'Never negative', s.lowCashPre < -1 ? `lowest in ${mgMonth(s.lowCashPreDate)}, ${negPre} month${negPre === 1 ? '' : 's'} below zero` : s.lowCashPreDate ? `lowest ${Math.abs(s.lowCashPre) < 1000 ? money(s.lowCashPre) : mgK(s.lowCashPre)} in ${mgMonth(s.lowCashPreDate)}` : '', s.lowCashPre < -1 ? 'bad' : 'good', 'lowCashPre') +
-    it('Cash at maturity', money(a.v), `maturity ${mgMonth(s.maturity)}${a.refi ? ', incl. bank refinancing' : ''}`, a.v < -1 ? 'bad' : 'good', a.refi ? '' : 'cashAtMaturity') +
-    it('Collateral buffer', s.headroom == null ? '–' : pctf(s.headroom), 'incl. interest and selling costs', s.headroom == null ? '' : s.headroom < 0.1 ? 'bad' : s.headroom < 0.2 ? 'warn' : 'good', 'headroom') +
-    (usesDscr(m) ? it(r.dscrBasis === 'monthly' ? 'Lowest DSCR' : 'Lowest DSCR, 12 months', s.dscrTest == null ? '–' : xf(s.dscrTest), s.dscrTest == null ? 'no loan payments before maturity' : `target ${xf(r.minDSCR)}`, s.dscrTest == null ? '' : s.dscrTest < r.minDSCR ? 'bad' : 'good', 'dscrTest') : '') +
-    it('InRento fee', money(fee), s.facility > 0 ? `${pctf(fee / s.facility, 1)} of the facility` : '', '', 'arrFeeAmt') + '</div>';
+    it(r.tranchesOn ? 'Facility' : 'Loan', money(s.facility), '', 'facility') +
+    (s.netCash < -1 ? it('Funding gap at drawdown', money(-s.netCash), 'bad', 'netCash') : '') +
+    it('LTV at drawdown', s.mkt0 > 0 ? pctf(s.ltv0) : '–', ltvT(s.ltv0), 'ltv0') +
+    it('Forced-sale LTV at drawdown', s.fs0 > 0 ? pctf(s.ltvFs0) : '–', ltvT(s.ltvFs0), 'ltvFs0') +
+    it('Highest LTV', pk ? pctf(pk.ltv) : '–', ltvT(pk && pk.ltv), 'maxLtv') +
+    it('Lowest borrower cash before maturity', money(s.lowCashPre), s.lowCashPre < -1 ? 'bad' : 'good', 'lowCashPre') +
+    it(a.refi ? 'Cash at maturity, incl. bank refinancing' : 'Cash at maturity', money(a.v), a.v < -1 ? 'bad' : 'good', a.refi ? '' : 'cashAtMaturity') +
+    it('Collateral buffer', s.headroom == null ? '–' : pctf(s.headroom), s.headroom == null ? '' : s.headroom < 0.1 ? 'bad' : s.headroom < 0.2 ? 'warn' : 'good', 'headroom') +
+    (usesDscr(m) && s.dscrTest != null ? it(r.dscrBasis === 'monthly' ? 'Lowest DSCR' : 'Lowest DSCR, 12 months', xf(s.dscrTest), s.dscrTest < r.minDSCR ? 'bad' : 'good', 'dscrTest') : '') +
+    it('InRento fee', `${money(fee)}${s.facility > 0 ? ` <span class="dl-pc">${pctf(fee / s.facility, 1)}</span>` : ''}`, '', 'arrFeeAmt') + '</div>';
 };
 // borrower cash month by month until maturity (the final repayment itself is the 'cash at maturity' number)
 function dealSpark(rows, mat, tone) {
