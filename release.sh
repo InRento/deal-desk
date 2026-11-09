@@ -14,7 +14,7 @@
 #          --skip-tests                     only for tests/launcher_test.py
 #          --no-git                          only for tests/launcher_test.py (a copy of the repo without git)
 # Before anything is built it checks git (v3.25.8): no uncommitted changes, and for --publish: on main, main pushed to
-# GitHub and equal to it, tag v<APP_VERSION> on this commit, a CHANGELOG entry, and a version above the published one.
+# GitHub and equal to it, tag v<APP_VERSION> on main with the same app source as this commit, a CHANGELOG entry, and a version above the published one.
 # Any miss stops the release with what to do – a version whose code is not on GitHub is never published.
 # The repository itself never goes to the drive (tests/deals and data/ hold real deals) – only dist/ and the runtime.
 set -e
@@ -31,15 +31,20 @@ $dirty"
   BR="$(git rev-parse --abbrev-ref HEAD)"
   if [ -n "$PUBLISH" ]; then
     [ "$BR" = "main" ] || stop "you are on branch $BR. Publish only from main: GitHub Desktop → Current branch → main (or: git checkout main)"
-    echo "Checking GitHub…"
-    git fetch -q origin main --tags || stop "could not reach GitHub to check that main is pushed"
+    # never ask for a GitHub login here: Terminal git may have none (GitHub Desktop keeps its own). Without access it
+    # compares with origin/main as GitHub Desktop last saw it – Desktop updates that ref on every push and fetch.
+    export GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/usr/bin/false SSH_ASKPASS=/usr/bin/false
+    git fetch -q origin main --tags 2>/dev/null || echo "Note: no GitHub login in Terminal – checking against main as GitHub Desktop last pushed it"
     ahead="$(git rev-list --count origin/main..HEAD)"; behind="$(git rev-list --count HEAD..origin/main)"
     [ "$ahead" = 0 ] || stop "main has $ahead commit(s) not on GitHub. Push origin in GitHub Desktop, then run this again"
     [ "$behind" = 0 ] || stop "GitHub has $behind newer commit(s) on main. Pull (git pull), then run this again"
-    [ "$(git rev-list -n 1 "v$VER" 2>/dev/null)" = "$(git rev-parse HEAD)" ] || stop "tag v$VER is missing or not on this commit – the release was not prepared (ask Claude to prepare $VER)"
+    # the tag marks the release commit; later commits may only touch tooling and docs, not what goes into dist/
+    git rev-parse -q --verify "v$VER^{commit}" >/dev/null || stop "tag v$VER is missing – the release was not prepared (ask Claude to prepare $VER)"
+    git merge-base --is-ancestor "v$VER" HEAD || stop "tag v$VER is not on main"
+    git diff --quiet "v$VER" HEAD -- src vendor build.sh || stop "the app changed after tag v$VER – it needs a new version (ask Claude to prepare the next one)"
     grep -q "^- v$VER " docs/CHANGELOG.md || stop "docs/CHANGELOG.md has no entry for v$VER"
-    git ls-remote --exit-code --tags origin "refs/tags/v$VER" >/dev/null 2>&1 || git push -q origin "v$VER" 2>/dev/null \
-      || echo "Note: tag v$VER is not on GitHub yet – push it later with: git push origin v$VER"
+    git ls-remote --exit-code --tags origin "refs/tags/v$VER" >/dev/null 2>&1 || git push -q origin "v$VER" >/dev/null 2>&1 \
+      || echo "Note: tag v$VER may not be on GitHub – GitHub Desktop pushes tags with Push origin"
   fi
 fi
 if [ -z "$ROLLBACK" ]; then
