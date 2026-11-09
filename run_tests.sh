@@ -10,9 +10,11 @@ cd "$(dirname "$0")"
 fail=0; LOG="$(mktemp)"
 run() { # run <name> <command…>: show failures and the last line, remember the result
   name="$1"; shift
+  printf '%s… ' "$name"
   if "$@" > "$LOG" 2>&1; then tail -1 "$LOG"; else grep -v '^ok' "$LOG" | tail -25; echo "$name FAILED"; fail=1; fi
 }
 ./build.sh || exit 1
+echo "Running every test – takes several minutes; each line appears when its test finishes."
 if command -v node >/dev/null 2>&1; then run "Engine guard" node tests/engine_test.js; run "Trace test" node tests/trace_test.js
 else echo "node not installed – engine guard cannot run (brew install node)"; fail=1; fi
 run "Server tests" python3 tests/server_test.py
