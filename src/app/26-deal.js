@@ -132,8 +132,7 @@ OUT.dealsc = () => {
   const shown = dealShown(scen), same = scen.length - shown.length;
   const card = (x, k) => { const s = x.res.summary, o = dealOutcome(s, r), j = scen.indexOf(x);
     return `<div class="dl-sc ${o.tone}" data-dl="${k}"><div class="dl-sch"><b><i class="dl-sw" style="background:${SCOL[k]}"></i>${esc(x.name)}</b><span class="dl-dot ${o.tone}"></span></div><div class="sub dl-what">${esc(scWhat(p, j))}</div>
-      <div class="dl-sco ${o.tone}">${esc(o.txt)}</div>
-      <div class="dl-scn"><div><span class="l">Borrower's lowest cash</span><span class="${s.lowCashPre < -1 ? 'bad' : ''}">${money(s.lowCashPre)}</span></div>${(() => { const a = dealAtMat(s, r); return `<div><span class="l">Cash at maturity${a.refi ? ' (incl. refi)' : ''}</span><span class="${a.v < -1 ? 'bad' : ''}">${money(a.v)}</span></div>`; })()}<div><span class="l">Highest LTV</span><span class="${s.maxLtv > r.maxLTV ? 'bad' : ''}">${s.maxLtv == null ? '–' : pctf(s.maxLtv)}</span></div></div></div>`; };
+      <div class="dl-sco ${o.tone}">${esc(o.txt)}</div></div>`; };
   return `<div class="dl-scs">${shown.map((x, k) => card(x, k)).join('')}</div>${same ? `<div class="sub" style="margin-top:8px">${same} scenario${same > 1 ? 's' : ''} not shown – same result as ${esc(scen[0].name)} on this deal (they move drivers the deal does not have).</div>` : ''}`;
 };
 // pointing at a scenario card picks out its line in the chart below

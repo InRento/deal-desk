@@ -1,4 +1,4 @@
-# Deal Desk – changes after v2.8 (current: v3.25.6, 6 Nov 2026)
+# Deal Desk – changes after v2.8 (current: v3.25.7, 9 Nov 2026)
 
 - v2.9 Currency view: PLN/EUR switch (Summary, Cash flow, Sensitivity, KPIs on those tabs, deck, Excel export); inputs stay in project currency. fxRate/fxDate per project, "Get today's ECB rate" (server /api/fx, urllib then /usr/bin/curl fallback). €5m check in Model check (warn > €5m, note > €4.5m, warn if no rate). app_i.js.
 - v3.0 Documents panel (app_j.js): right-side resizable panel; Word via mammoth 1.8.0 (inlined) with section navigator + search, Excel sheet tabs + search, PDF with #page jump, images; document type in documents.note; import `_documents` from ~/Deal Desk/import/<folder>; source tags in inputs.sources (blue doc / amber assumed / grey edited) with Open/Confirm chip; "N assumed values to confirm" (v3.2.1: "Confirm all" fix button).
@@ -102,3 +102,5 @@ Source of truth: ~/Desktop/Underwriting tool/deal-desk (from v3.11; v2 is retire
 - v3.25.6 (6 Nov 2026) Deal tab: links in three boxes under the main terms – Project folder, Listings, Other information (`dealLinks`, new input `links` = [{box, url, label}], column deal_links JSON). A link shows its label and site; https:// is added when missing. Deal-level like benefits and risks (kept across versions); only the lock holder adds or removes links; empty boxes are hidden from others.
   - Tests: lock_ui_test opens Inputs (the Deal tab has no fields since 3.25.3); the source-link test waits for the popup; ui_test adds a link on the Deal tab.
   - Guard: engine unchanged. App snapshot re-recorded for the Deal views only (the empty Links box; no number changed).
+- v3.25.7 (9 Nov 2026) Deal tab: scenario cards show only the name, what the scenario moves and the outcome – the row of lowest cash, cash at maturity and highest LTV is gone (the chart under the cards shows the cash).
+  - Guard: engine unchanged. App snapshot re-recorded for the Deal views only (no number changed).
