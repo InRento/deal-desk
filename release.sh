@@ -12,11 +12,36 @@
 #          --runtime <python dir|.tar.gz>   built-in Python (arm64); needed for the first release, then reused
 #          --min-version <v>                oldest app still allowed to save; raise it when the deal format changes
 #          --skip-tests                     only for tests/launcher_test.py
+#          --no-git                          only for tests/launcher_test.py (a copy of the repo without git)
+# Before anything is built it checks git (v3.25.8): no uncommitted changes, and for --publish: on main, main pushed to
+# GitHub and equal to it, tag v<APP_VERSION> on this commit, a CHANGELOG entry, and a version above the published one.
+# Any miss stops the release with what to do – a version whose code is not on GitHub is never published.
 # The repository itself never goes to the drive (tests/deals and data/ hold real deals) – only dist/ and the runtime.
 set -e
 cd "$(dirname "$0")"
-SKIP=""; ROLLBACK=""
-for a in "$@"; do [ "$a" = "--skip-tests" ] && SKIP=1; [ "$a" = "--rollback" ] && ROLLBACK=1; done
+SKIP=""; ROLLBACK=""; PUBLISH=""; NOGIT=""
+for a in "$@"; do [ "$a" = "--skip-tests" ] && SKIP=1; [ "$a" = "--rollback" ] && ROLLBACK=1; [ "$a" = "--publish" ] && PUBLISH=1; [ "$a" = "--no-git" ] && NOGIT=1; done
+stop() { echo; echo "STOPPED – nothing was released: $*"; echo; exit 1; }
+if [ -z "$ROLLBACK" ] && [ -z "$NOGIT" ]; then
+  git rev-parse --git-dir >/dev/null 2>&1 || stop "this folder is not the git clone"
+  dirty="$(git status --porcelain --untracked-files=no)"
+  [ -z "$dirty" ] || stop "uncommitted changes – commit or discard them first:
+$dirty"
+  VER="$(sed -n 's/^APP_VERSION = "\([^"]*\)".*/\1/p' src/server.py)"
+  BR="$(git rev-parse --abbrev-ref HEAD)"
+  if [ -n "$PUBLISH" ]; then
+    [ "$BR" = "main" ] || stop "you are on branch $BR. Publish only from main: GitHub Desktop → Current branch → main (or: git checkout main)"
+    echo "Checking GitHub…"
+    git fetch -q origin main --tags || stop "could not reach GitHub to check that main is pushed"
+    ahead="$(git rev-list --count origin/main..HEAD)"; behind="$(git rev-list --count HEAD..origin/main)"
+    [ "$ahead" = 0 ] || stop "main has $ahead commit(s) not on GitHub. Push origin in GitHub Desktop, then run this again"
+    [ "$behind" = 0 ] || stop "GitHub has $behind newer commit(s) on main. Pull (git pull), then run this again"
+    [ "$(git rev-list -n 1 "v$VER" 2>/dev/null)" = "$(git rev-parse HEAD)" ] || stop "tag v$VER is missing or not on this commit – the release was not prepared (ask Claude to prepare $VER)"
+    grep -q "^- v$VER " docs/CHANGELOG.md || stop "docs/CHANGELOG.md has no entry for v$VER"
+    git ls-remote --exit-code --tags origin "refs/tags/v$VER" >/dev/null 2>&1 || git push -q origin "v$VER" 2>/dev/null \
+      || echo "Note: tag v$VER is not on GitHub yet – push it later with: git push origin v$VER"
+  fi
+fi
 if [ -z "$ROLLBACK" ]; then
   ./build.sh
   [ -n "$SKIP" ] || ./run_tests.sh
@@ -33,6 +58,7 @@ ap.add_argument("--drive")
 ap.add_argument("--runtime")
 ap.add_argument("--min-version")
 ap.add_argument("--skip-tests", action="store_true")
+ap.add_argument("--no-git", action="store_true")
 a = ap.parse_args()
 
 FILES = ["index.html", "server.py", "xlsx.full.min.js", "jspdf.umd.min.js", "html2canvas.min.js"]
@@ -92,6 +118,9 @@ if a.rollback:
     sys.exit(0)
 
 ver = re.search(r'^APP_VERSION = "([^"]+)"', open("dist/server.py", encoding="utf-8").read(), re.M).group(1)
+vt = lambda v: tuple(int(x) for x in re.findall(r"\d+", v or "0"))
+if a.publish and cur.get("version") and vt(ver) < vt(cur["version"]):
+    sys.exit(f"STOPPED – {ver} is older than the published {cur['version']} (a stale src/server.py?). Use --rollback to go back on purpose.")
 files = [{"name": f, "sha256": sha(os.path.join("dist", f))} for f in FILES]
 dest = os.path.join(rel, ver)
 old = read(os.path.join(dest, "manifest.json"))

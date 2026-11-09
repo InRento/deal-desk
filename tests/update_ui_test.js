@@ -20,7 +20,7 @@ const check = (ok, what, got) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}$
   execFileSync('python3', [path.join(ROOT, 'src', 'server.py'), '--init-drive', drive], { env: Object.assign({}, process.env, { DEALDESK_DATA: path.join(tmp, 'setup') }) });
   const rt = path.join(tmp, 'rt', 'python', 'bin'); fs.mkdirSync(rt, { recursive: true });
   fs.symlinkSync(execFileSync('python3', ['-c', 'import sys; print(sys.executable)']).toString().trim(), path.join(rt, 'python3'));
-  execFileSync(path.join(ROOT, 'release.sh'), ['--drive', drive, '--skip-tests', '--publish', '--runtime', path.join(tmp, 'rt', 'python')], { stdio: 'ignore' });
+  execFileSync(path.join(ROOT, 'release.sh'), ['--drive', drive, '--skip-tests', '--no-git', '--publish', '--runtime', path.join(tmp, 'rt', 'python')], { stdio: 'ignore' });
   const env = Object.assign({}, process.env, { HOME: home, DEALDESK_TEST: '1', DEALDESK_PORT: String(port), DEALDESK_SYNC_SECONDS: '0.5', DEALDESK_FLUSH_SECONDS: '0', DEALDESK_USER: 'test@example.com' });
   delete env.DEALDESK_DRIVE; delete env.DEALDESK_DATA;
   const rel = path.join(drive, 'Releases'), cur = () => JSON.parse(fs.readFileSync(path.join(rel, 'current.json'), 'utf8'));

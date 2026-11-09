@@ -20,12 +20,15 @@ The underwriting app for InRento loans: a deal register, a monthly cash-flow mod
 
 ```sh
 ./build.sh          # src → dist/ (needs nothing; uses node for a syntax check when installed)
-./run_tests.sh      # engine + server tests; the browser test too when Playwright is installed
+./run_tests.sh      # every test – engine, server, drive, launcher, app guard and browser tests (fails without Playwright)
 ./release.sh        # build, test, stage Releases/<APP_VERSION>/ on the shared drive (nobody gets it yet)
-./release.sh --publish            # switch Releases/current.json to it – after Tautvydas says "push"
+./release.sh --publish            # switch Releases/current.json to it – after Tautvydas says "push"; only from main,
+                                  # pushed to GitHub, tagged v<APP_VERSION>, with a CHANGELOG entry (it stops otherwise)
 ./release.sh --rollback 3.19.0    # switch back to an earlier staged version
 ./release.sh --installer          # rebuild "Install Deal Desk.dmg" on the drive (only when mac/ changes)
 ```
+
+One-time setup on a Mac that releases: `npm install && npx playwright install chromium` in this folder (Playwright runs the app guard and the browser tests; without it `run_tests.sh` fails instead of skipping them).
 
 **Install and updates.** Colleagues open `Install Deal Desk.dmg` from the shared drive and drag Deal Desk to Applications – once. The app is only a launcher: at every start it reads `Releases/current.json`, copies that version into `~/Deal Desk/app/<version>/` (every file checked against its checksum; if one does not match yet – Drive still syncing – the version already on the Mac runs) and starts it. After `--publish`, open apps show "Restart to update"; unsaved work is saved first. `--min-version` makes older apps read-only when the deal format changes, and a deal saved by a newer app is read-only for older ones. The built-in Python is published once (`--runtime <folder with python/ or .tar.gz>`) and reused.
 

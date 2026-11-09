@@ -64,7 +64,7 @@ class LauncherTest(unittest.TestCase):
 
     @classmethod
     def release(cls, *args):
-        return subprocess.run([os.path.join(ROOT, "release.sh"), "--drive", cls.drive, "--skip-tests", *args],
+        return subprocess.run([os.path.join(ROOT, "release.sh"), "--drive", cls.drive, "--skip-tests", "--no-git", *args],
                               capture_output=True, text=True, check=True).stdout
 
     @classmethod
