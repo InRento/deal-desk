@@ -47,10 +47,15 @@ const check = (ok, what, got) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}$
     check(bar.startsWith('Deal Desk 9.9.0 is ready'), 'bar: new version ready', bar);
     if (SHOTS) { fs.mkdirSync(SHOTS, { recursive: true }); await pg.screenshot({ path: path.join(SHOTS, '9-update-ready.png'), clip: { x: 640, y: 780, width: 800, height: 120 } }); }
     await pg.click('[data-act="upd-restart"]');
-    await pg.waitForLoadState('load'); await sleep(500);
-    for (let i = 0; i < 60 && !(await pg.evaluate(() => fetch('/api/ping').then((x) => x.json()).then((x) => x.version).catch(() => ''))).startsWith('9.9.0'); i++) await sleep(500);
-    await pg.waitForFunction(() => !document.querySelector('#updbar') && document.querySelector('#app').innerText.length > 0, null, { timeout: 15000 }).catch(() => {});
-    check((await pg.evaluate(() => fetch('/api/ping').then((x) => x.json()))).version === '9.9.0', 'Restart to update runs 9.9.0');
+    // ask the server from here, not from the page: the page reloads itself when the new version is up, and an
+    // evaluate running at that moment fails with "Execution context was destroyed"
+    const ver = () => fetch(`http://127.0.0.1:${port}/api/ping`).then((x) => x.json()).then((x) => x.version || '').catch(() => '');
+    for (let i = 0; i < 60 && !(await ver()).startsWith('9.9.0'); i++) await sleep(500);
+    for (let i = 0; i < 30; i++) { // wait until the page has reloaded on 9.9.0
+      const done = await pg.evaluate(() => !document.querySelector('#updbar') && document.querySelector('#app').innerText.length > 0).catch(() => false);
+      if (done) break; await sleep(500);
+    }
+    check((await ver()) === '9.9.0', 'Restart to update runs 9.9.0');
     check(!(await pg.$('#updbar')), 'the page reloaded on the new version (no bar)');
     publish('9.9.0', { min_version: '9.9.5' });
     await pg.waitForSelector('#updbar.req', { timeout: 15000 });
