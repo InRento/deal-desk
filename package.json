@@ -3,6 +3,6 @@
   "private": true,
   "description": "Test tools only (the app itself has no dependencies): Playwright runs the app guard and the browser tests",
   "devDependencies": {
-    "playwright": "1.55.0"
+    "playwright": "1.55.1"
   }
 }
