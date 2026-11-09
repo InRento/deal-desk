@@ -5,7 +5,7 @@
 #  - server tests: storage, import folder, backups, origin guard
 #  - drive tests: two servers on one shared folder (saves, stale copies, rev conflicts, versions, inbox, drive missing)
 #  - launcher tests: release.sh stages/publishes, the real launcher installs, updates, refuses a damaged download, dmg
-#  - with Playwright: app guard (every tab, deck and Excel export unchanged), the browser flow test and the lock test (two Macs)
+#  - with Playwright (required since v3.25.8 – before, a Mac without it skipped these silently): app guard (every tab, deck and Excel export unchanged), the browser flow test and the lock test (two Macs)
 cd "$(dirname "$0")"
 fail=0; LOG="$(mktemp)"
 run() { # run <name> <command…>: show failures and the last line, remember the result
@@ -23,6 +23,7 @@ if command -v node >/dev/null 2>&1 && node -e "require('playwright')" >/dev/null
   run "Browser test" node tests/ui_test.js
   run "Lock browser test" node tests/lock_ui_test.js
   run "Update browser test" node tests/update_ui_test.js
-else echo "Playwright not installed – app guard and browser test skipped (npm i -D playwright && npx playwright install chromium)"; fi
+else echo "Playwright not installed – the app guard and the browser tests cannot run. Install once in this folder:"
+  echo "  npm install && npx playwright install chromium"; fail=1; fi
 rm -f "$LOG"
 [ $fail = 0 ] && echo "ALL TESTS PASSED" || { echo "TESTS FAILED – do not release"; exit 1; }

@@ -10,3 +10,6 @@ Deal Desk *.zip
 
 # real deals copied from ~/Deal Desk for the Drive migration – never commit
 data/
+
+# npm install for the test tools (package.json pins Playwright)
+package-lock.json

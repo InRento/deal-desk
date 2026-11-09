@@ -70,6 +70,8 @@ Read README.md first. This file is how the code is put together and the rules fo
 ```sh
 ./build.sh && ./run_tests.sh      # release.sh runs this and stops on any failure
 ```
+- **Playwright is required** (`npm install && npx playwright install chromium`, package.json pins it). Until v3.25.8 a Mac without it skipped the app guard and the browser tests with one line of output – Tautvydas's Mac never ran them, so the lock test failed unnoticed from 3.25.3 to 3.25.6.
+- **release.sh --publish checks git first** and stops before building when: not on main, uncommitted changes, main not equal to origin/main (unpushed or behind), tag `v<APP_VERSION>` missing or not on HEAD, no CHANGELOG entry, or APP_VERSION older than the published one (a stale server.py once reset it to 3.25.0). It pushes the tag if GitHub lacks it. `--no-git` is only for launcher_test / update_ui_test, which run release.sh on a fake drive.
 - **Engine guard** (`tests/engine_test.js`): the confirmed figures of Skýra, Ustroń, Noa and M23 (reconciled once against the analysts' models) must still come out, and every result of every deal in `tests/deals/` must equal `tests/expected/engine.json`.
 - **App guard** (`tests/app_snapshot.js`, needs Playwright): every tab, the committee deck and the Excel export of every test deal must equal `tests/expected/app.json` (clock fixed at 24 Oct 2026).
 - A guard failure means a number moved. Fix it, or – when the change is intended – re-record with `--update` and write in docs/CHANGELOG.md which numbers changed and why. Never re-record just to make a failure go away.
