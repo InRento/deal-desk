@@ -17,11 +17,8 @@ Updates come by themselves: when a new version is published on the shared drive,
 "Restart to update". There is nothing to reinstall.
 
 Deals live in the "Deal desk" shared drive, so everyone on the team sees the same deals. To change a deal, press
-"Lock & edit"; others see it read-only until you unlock it. Your Mac keeps only a local index, your Gmail cache and a
-log in the folder "Deal Desk" in your home folder.
-
-Gmail (optional): Home page > Email settings, with a Gmail app password. Read-only – the app never changes your mailbox,
-and the password is kept in the macOS Keychain.
+"Lock & edit"; others see it read-only until you unlock it. Your Mac keeps only a local index and a log in the
+folder "Deal Desk" in your home folder.
 
 To close it, just close the browser tab; it stops by itself 20 minutes later.
 To remove it: delete the app and the "Deal Desk" folder in your home folder (the deals stay on the shared drive).
