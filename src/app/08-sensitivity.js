@@ -34,7 +34,7 @@ OUT.room = () => {
   const val = [];
   if (b.valueForced100 != null) val.push(`<div><span class="l">Collateral value can fall before a forced sale no longer covers the loan</span><b>${pc(b.valueForced100, 'not covered at drawdown')}</b><span class="sub">full facility vs value after the ${pctf(r.haircut, 0)} haircut</span></div>`);
   if (b.valueMaxLTV != null) val.push(`<div><span class="l">Collateral value can fall before LTV passes the ${pctf(r.maxLTV, 0)} limit</span><b>${pc(b.valueMaxLTV, 'already above the limit')}</b><span class="sub">full facility vs market value</span></div>`);
-  if (b.headroom != null) val.push(`<div><span class="l">Collateral buffer incl. interest</span><b class="${b.headroom < 0.1 ? 'bad-t' : ''}">${pctf(b.headroom)}</b><span class="sub">value can fall before it no longer covers loan + interest + selling costs</span></div>`);
+  if (b.headroom != null) val.push(`<div><span class="l">Value can fall before a loss</span><b class="${b.headroom < 0.1 ? 'bad-t' : ''}">${pctf(b.headroom)}</b><span class="sub">until a sale of the collateral no longer repays the loan, all interest and selling costs</span></div>`);
   if (usesDscr(S.model) && b.revDscrMin) { const o = b.revDscrMin; val.push(`<div><span class="l">Revenue can fall</span><b>${o.failsAtBase ? 'fails at plan' : o.beyond ? 'more than −100%' : `−${(o.value * 100).toFixed(1)}%`}</b><span class="sub">before DSCR drops below ${r.minDSCR}×</span></div>`); }
   return `${M.drivers.length ? `<div class="mghead">${esc(mgHeadline(M))}</div>
     <div class="tblwrap" style="margin-top:10px"><table class="rm"><thead><tr><th>Driver</th><th>Before the borrower runs short of cash</th><th>Before InRento is not repaid by maturity</th></tr></thead><tbody>${rows}</tbody></table></div>
@@ -89,7 +89,7 @@ const SENS_ROWS = [
   ['Lowest cash before exit', (s) => money(s.lowCashPre), (s) => (s.lowCashPre < 0 ? 'hb' : 'hg')], ['Liquidity reserve needed', (s) => money(s.reserveNeed)], ['Months with negative cash', (s) => s.negMonths],
   ['Cash at maturity', (s) => money(s.cashAtMaturity), (s) => (s.cashAtMaturity < 0 ? 'hb' : 'hg')], ['Loan fully repaid in', (s) => (s.repaidDate ? datef(s.repaidDate) : 'Not repaid'), (s) => (s.repaidDate ? '' : 'hb')],
   ['Repaid via sales', (s) => money(s.viaSweep)], ['LTV at drawdown (market)', (s) => pctf(s.ltv0), (s, r) => (s.ltv0 > r.maxLTV ? 'hb' : '')], ['LTV at drawdown (lending value)', (s) => pctf(s.ltvFs0), (s, r) => (s.ltvFs0 > r.maxLTV ? 'hb' : '')],
-  ['Highest LTV during loan (lending value)', (s) => pctf(s.maxLtvFs), (s, r) => (s.maxLtvFs > r.maxLTV ? 'hb' : '')], ['Exit LTV', (s) => pctf(s.exitLTV)], ['Value headroom', (s) => pctf(s.headroom)],
+  ['Highest LTV during loan (lending value)', (s) => pctf(s.maxLtvFs), (s, r) => (s.maxLtvFs > r.maxLTV ? 'hb' : '')], ['Exit LTV', (s) => pctf(s.exitLTV)], ['Value can fall before a loss', (s) => pctf(s.headroom)],
   ['InRento interest earned', (s) => money(s.interest)], ['Total lender profit', (s) => money(s.profit)], ['InRento IRR (annualised)', (s) => pctf(s.irr, 2)], ['Checks flagged', (s) => s.flags, (s) => (s.flags ? 'hb' : 'hg')],
 ];
 // the full table on screen leaves out returns (InRento earns its fee) and DSCR on deals without income; the Excel export keeps all rows

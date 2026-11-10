@@ -41,6 +41,8 @@ function dealTerms(p, m, ccy) {
   }
   return out;
 }
+// how far collateral value can fall from the weakest month (highest LTV) before LTV reaches the limit; negative = already above it
+const ltvRoom = (ltv, lim) => 1 - ltv / lim;
 // links: project folder, listings, other information – they belong to the deal (not a version); only the lock holder edits,
 // and boxes without links are hidden from everyone else
 const LINK_BOXES = [['folder', 'Project folder', 'e.g. the Google Drive folder'], ['listings', 'Listings', 'e.g. Otodom, Aruodas'], ['other', 'Other information', 'e.g. adverse media, registry extracts']];
@@ -98,7 +100,7 @@ function dealOutcome(s, r) {
 }
 OUT.dealres = () => { // plain numbers, no notes under them (Tautvydas, 9 Nov) – the terms are on the left, the details on Summary
   const m = S.model, s = m.summary, r = m.r;
-  const lim = r.maxLTV, ltvT = (v) => (v == null ? '' : v > lim ? 'bad' : 'good');
+  const lim = r.maxLTV, ltvT = (v) => (v == null ? '' : v > lim ? 'bad' : 'good'), roomT = (v) => (v < 0.1 ? 'bad' : v < 0.2 ? 'warn' : 'good');
   const it = (l, v, tone = '', tr = '') => `<div class="dl-it"><div class="l">${l}</div><div class="v ${tone}"${tr ? ` data-tr="m:${tr}"` : ''}>${v}</div></div>`;
   const pk = peakOf(m, 'ltv'), a = dealAtMat(s, r), fee = feeOf(s);
   return '<div class="dl-grid">' +
@@ -109,7 +111,8 @@ OUT.dealres = () => { // plain numbers, no notes under them (Tautvydas, 9 Nov) �
     it('Highest LTV', pk ? pctf(pk.ltv) : '–', ltvT(pk && pk.ltv), 'maxLtv') +
     it('Lowest borrower cash before maturity', money(s.lowCashPre), s.lowCashPre < -1 ? 'bad' : 'good', 'lowCashPre') +
     it(a.refi ? 'Cash at maturity, incl. bank refinancing' : 'Cash at maturity', money(a.v), a.v < -1 ? 'bad' : 'good', a.refi ? '' : 'cashAtMaturity') +
-    it('Collateral buffer', s.headroom == null ? '–' : pctf(s.headroom), s.headroom == null ? '' : s.headroom < 0.1 ? 'bad' : s.headroom < 0.2 ? 'warn' : 'good', 'headroom') +
+    (pk && lim > 0 ? (() => { const v = ltvRoom(pk.ltv, lim); return it('Value can fall before the LTV limit', pctf(v), roomT(v)); })() : '') +
+    it('Value can fall before a loss', s.headroom == null ? '–' : pctf(s.headroom), s.headroom == null ? '' : roomT(s.headroom), 'headroom') +
     (usesDscr(m) && s.dscrTest != null ? it(r.dscrBasis === 'monthly' ? 'Lowest DSCR' : 'Lowest DSCR, 12 months', xf(s.dscrTest), s.dscrTest < r.minDSCR ? 'bad' : 'good', 'dscrTest') : '') +
     it('InRento fee', `${money(fee)}${s.facility > 0 ? ` <span class="dl-pc">${pctf(fee / s.facility, 1)}</span>` : ''}`, '', 'arrFeeAmt') + '</div>';
 };
