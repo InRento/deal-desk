@@ -9,7 +9,7 @@ function tabSens() {
   <div class="card"><div class="row" style="justify-content:space-between;margin-bottom:8px"><div><h2>Your scenarios</h2><div class="sub">Each reruns the whole monthly cash flow. Edit to change what a scenario moves.</div></div>
     <div class="row"><button class="btn sm" data-act="add-sc">Add scenario</button><button class="btn sm ghost" data-act="reset-sc">Reset to standard set</button></div></div>
     ${scTable(p)}
-    <h3 style="margin:16px 0 4px">Borrower cash by scenario</h3><div class="legend" id="lg-sens"></div><div class="chart" id="ch-sens"></div>
+    <div class="row" style="margin:16px 0 4px;gap:10px;align-items:center"><h3 id="sens-metric-h">${esc(sensMetric().label)} by scenario</h3><select class="in" id="sens-metric" aria-label="Metric to chart" style="width:auto">${sensMetrics().map((x) => `<option value="${x.k}" ${x.k === sensMetric().k ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</select></div><div class="legend" id="lg-sens"></div><div class="chart" id="ch-sens"></div>
     <details class="sc-all" style="margin-top:12px"><summary>All metrics by scenario</summary><div class="tblwrap" data-out="sensres" style="margin-top:8px"></div></details></div>
   <div class="card"><h2 style="margin-bottom:4px">Two drivers together</h2><div class="sub" style="margin-bottom:10px">Does the loan get repaid when both go wrong at once?</div><div data-out="grid2"></div>
     <details style="margin-top:12px"${S.ownGrid ? ' open' : ''} data-own-grid><summary>Choose your own two drivers</summary><div style="margin-top:10px">
@@ -26,6 +26,31 @@ document.addEventListener('toggle', (e) => {
   if (!(e.target.matches && e.target.matches('details[data-own-grid]'))) return;
   S.ownGrid = e.target.open; const o = document.querySelector('[data-out="grid2"]'); if (o) o.innerHTML = OUT.grid2();
 }, true);
+
+// the metric charted under "Your scenarios" (S.sensMetric, this Mac only – not saved with the deal)
+const pctAxis = (v) => `${Math.round(v * 100)}%`;
+const SENS_METRICS = [
+  { k: 'cash', label: 'Borrower cash', values: (rows) => rows.map((r) => r.cash) },
+  { k: 'close', label: 'Loan outstanding', values: (rows) => rows.map((r) => r.close) },
+  { k: 'ltv', label: 'LTV (market value)', values: (rows) => rows.map((r) => r.ltv), fmt: (v) => pctf(v), axis: pctAxis },
+  { k: 'ltvFs', label: 'Forced-sale LTV', values: (rows) => rows.map((r) => r.ltvFs), fmt: (v) => pctf(v), axis: pctAxis },
+  { k: 'collMkt', label: 'Collateral value', values: (rows) => rows.map((r) => r.collMkt) },
+  { k: 'sales', label: 'Sales received (cumulative)', values: (rows) => { let t = 0; return rows.map((r) => (t += (r.saleColl || 0) + (r.saleOther || 0))); } },
+  { k: 'revenue', label: 'Revenue per month', values: (rows) => rows.map((r) => r.revenue) },
+  { k: 'interest', label: 'Interest charged per month', values: (rows) => rows.map((r) => r.interest) },
+  { k: 'ncf', label: 'Net cash flow per month', values: (rows) => rows.map((r) => r.ncf) },
+  { k: 'dscr', label: 'DSCR (monthly)', values: (rows) => rows.map((r) => (r.ds > 0 ? r.dscr : null)), fmt: (v) => xf(v), axis: (v) => `${v.toFixed(1)}×`, dscr: true },
+];
+// only metrics this deal has: something other than zero in the plan
+function sensMetrics() {
+  const rows = (S.model && S.model.rows) || [];
+  return SENS_METRICS.filter((x) => (x.dscr ? usesDscr(S.model) : x.k === 'cash' || x.values(rows).some((v) => v != null && Math.abs(v) > 0.5e-6)));
+}
+function sensMetric() { const all = sensMetrics(); return all.find((x) => x.k === S.sensMetric) || all[0] || SENS_METRICS[0]; }
+document.addEventListener('change', (e) => {
+  if (e.target.id !== 'sens-metric') return;
+  S.sensMetric = e.target.value; const h = $('#sens-metric-h'); if (h) h.textContent = `${sensMetric().label} by scenario`; drawCharts();
+});
 
 // ---- 1. how much room
 OUT.room = () => {

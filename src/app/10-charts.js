@@ -1,5 +1,5 @@
 // ---------- charts ----------
-function lineChart(el, { x, series, fmt = money, zero = true, height = 260, bars = false, neg = '' }) {
+function lineChart(el, { x, series, fmt = money, axis = compact, zero = true, height = 260, bars = false, neg = '' }) {
   if (!el) return;
   const W = Math.max(300, el.clientWidth || 600), H = height, ml = 64, mr = 12, mt = 10, mb = 26;
   const all = series.flatMap((s) => s.values).filter((v) => v != null && isFinite(v));
@@ -10,7 +10,7 @@ function lineChart(el, { x, series, fmt = money, zero = true, height = 260, bars
   const n = x.length, pw = W - ml - mr, ph = H - mt - mb;
   const sx = (i) => ml + (n === 1 ? pw / 2 : (i * pw) / (n - 1)), sy = (v) => mt + ph - ((v - lo) / (hi - lo)) * ph;
   let g = '';
-  for (let v = lo; v <= hi + step / 2; v += step) g += `<line class="${Math.abs(v) < step / 1e6 ? 'zero' : 'grid'}" x1="${ml}" x2="${W - mr}" y1="${sy(v)}" y2="${sy(v)}"/><text class="ax" x="${ml - 6}" y="${sy(v) + 3.5}" text-anchor="end">${compact(v)}</text>`;
+  for (let v = lo; v <= hi + step / 2; v += step) g += `<line class="${Math.abs(v) < step / 1e6 ? 'zero' : 'grid'}" x1="${ml}" x2="${W - mr}" y1="${sy(v)}" y2="${sy(v)}"/><text class="ax" x="${ml - 6}" y="${sy(v) + 3.5}" text-anchor="end">${axis(v)}</text>`;
   const every = Math.max(1, Math.ceil(n / Math.max(2, Math.floor(pw / 70))));
   for (let i = 0; i < n; i += every) g += `<text class="ax" x="${sx(i)}" y="${H - 8}" text-anchor="middle">${esc(x[i].label)}</text>`;
   let marks = lo < 0 && neg ? `<rect class="negz" x="${ml}" y="${sy(0)}" width="${pw}" height="${mt + ph - sy(0)}"/><text class="negl" x="${ml + 6}" y="${mt + ph - 6}">${esc(neg)}</text>` : '';
@@ -74,8 +74,9 @@ function drawCharts() {
     const { scen } = sensModel();
     const n = Math.max(...scen.map((s) => s.res.rows.length));
     const sx = Array.from({ length: n }, (_, i) => xs[i] || { label: String(i), tip: 'Month ' + i });
-    const ser = scen.slice(0, 8).map((s, k) => ({ name: s.name, color: SCOL[k], values: s.res.rows.map((r) => r.cash), w: k === 0 ? 2.5 : 1.75 }));
+    const mt = sensMetric();
+    const ser = scen.slice(0, 8).map((s, k) => ({ name: s.name, color: SCOL[k], values: mt.values(s.res.rows), w: k === 0 ? 2.5 : 1.75 }));
     $('#lg-sens').innerHTML = ser.map((s) => `<span><i class="sw" style="background:${s.color}"></i>${esc(s.name)}</span>`).join('') + (scen.length > 8 ? '<span class="sub">First 8 scenarios charted</span>' : '');
-    lineChart(se, { x: sx, series: ser, height: 300 });
+    lineChart(se, { x: sx, series: ser, height: 300, fmt: mt.fmt || money, axis: mt.axis || compact });
   }
 }

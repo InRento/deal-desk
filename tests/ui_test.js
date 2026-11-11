@@ -49,6 +49,8 @@ const check = (ok, what, got) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}$
     check((await text('[data-out="dealsc"]')).includes('Base'), 'Deal tab shows the scenarios', await text('[data-out="dealsc"]'));
     // 3c Sensitivity: the two-driver grid follows the drivers chosen under "Choose your own two drivers"
     await tab('sens'); await sleep(600);
+    await pg.selectOption('#sens-metric', 'ltv'); await sleep(500);
+    check((await text('#sens-metric-h')) === 'LTV (market value) by scenario' && (await pg.$$eval('#ch-sens text.ax', (t) => t.some((x) => x.textContent.endsWith('%')))), 'scenario chart switches to LTV', await text('#sens-metric-h'));
     check((await text('[data-out="grid2"]')).includes('Sale prices'), 'two-driver grid preset by deal type', await text('[data-out="grid2"]'));
     await pg.click('details[data-own-grid] summary'); await sleep(600);
     await pg.selectOption('#g-row', 'salePrice'); await sleep(900);
