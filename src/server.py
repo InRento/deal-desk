@@ -127,6 +127,7 @@ INPUT_FIELDS = [
     ("saleOrder", "sale_proceeds_order", "TEXT"), ("ignoredChecks", "ignored_checks", "JSON"),
     ("fxRate", "fx_rate_per_eur", "NUMERIC"), ("fxDate", "fx_rate_date", "TEXT"), ("sources", "field_sources", "JSON"), ("activeVersion", "active_version_id", "TEXT"),
     ("benefits", "deck_benefits", "TEXT"), ("links", "deal_links", "JSON"), ("risks", "deck_risks", "TEXT"), ("deckDesc", "deck_description", "TEXT"),
+    ("dealPlan", "deal_tab_plan_version", "TEXT"), ("dealView", "deal_tab_view_version", "TEXT"),  # Deal tab: borrower's plan vs our view (v3.27)
     # construction / renovation (v3.13)
     ("constrOn", "construction_on", "INTEGER"), ("worksStart", "works_start_date", "TEXT"), ("worksEnd", "works_completion_date", "TEXT"),
     ("contingency", "works_contingency_pct", "NUMERIC"), ("spendCurve", "works_spend_curve", "TEXT"), ("fundingOrder", "works_funding_order", "TEXT"),

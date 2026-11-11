@@ -100,6 +100,12 @@ const check = (ok, what, got) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}$
     check(await pg.inputValue('[data-k="inputs.rate"]') === '11', 'switching back to Main restores its rate', await pg.inputValue('[data-k="inputs.rate"]'));
     await tab('overview'); check(await pg.inputValue('#m-nextAction') === 'Send term sheet', 'next action survives a version switch', await pg.inputValue('#m-nextAction'));
     check((await text('#jdcard')).includes('Low LTV, sponsor equity in first'), 'decision log survives a version switch', await text('#jdcard'));
+    // 6b Deal tab: borrower's plan vs our view, picked on Versions; the choice belongs to the deal and survives a version switch
+    await tab('versions'); const hr = opts.find((o) => /Higher rate/.test(o[1]));
+    await pg.selectOption('#dl-plan', main[0]); await sleep(300); await pg.selectOption('#dl-view', hr[0]); await sleep(900);
+    await pg.selectOption('#vsel', hr[0]); await sleep(1800); await tab('deal');
+    { const t = await text('[data-out="dealres"]'); check(t.includes("Borrower's plan") && t.includes('Our view') && t.includes('Higher rate'), 'Deal tab shows the plan and our view side by side', t); }
+    await pg.selectOption('#vsel', main[0]); await sleep(1800); await tab('overview');
     await pg.fill('#m-deckDesc', 'Test building in Riga.'); await sleep(900);
     // 7 committee deck: the deal and the stress test
     await pg.click('[data-act="deck"]'); await pg.waitForSelector('.deckframe');

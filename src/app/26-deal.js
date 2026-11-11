@@ -18,7 +18,7 @@ function tabDeal() {
       <div class="stack"><section class="card"><h2>Proposed structure${b !== 'EUR' || eur ? ` <span class="sub">in ${esc(b)}</span>` : ''}</h2><div class="dl-kvs">${fields}</div>${tr}</section>${dealLinks(p)}</div>
       <div class="stack"><section class="card"><h2>Results${viewEUR() ? ' <span class="sub">in EUR</span>' : ''}</h2><div data-out="dealres"></div></section>${dealBR(p)}</div>
     </div>
-    <section class="card" style="margin-top:16px"><div class="row" style="justify-content:space-between;align-items:baseline"><h2>Scenarios${viewEUR() ? ' <span class="sub">in EUR</span>' : ''}</h2><span class="sub">Built on Sensitivity. Each one reruns the full monthly cash flow.</span></div><div data-out="dealsc"></div>
+    <section class="card" style="margin-top:16px"><div class="row" style="justify-content:space-between;align-items:baseline"><h2>Scenarios${viewEUR() ? ' <span class="sub">in EUR</span>' : ''}</h2><span class="sub">Built on Sensitivity. Each one reruns the full monthly cash flow.</span></div>${dealScNote()}<div data-out="dealsc"></div>
       <div class="dl-chart"><div class="dl-h">Borrower's cash, month by month, until maturity</div><div class="sub" style="margin-bottom:8px">One line per scenario, in the card's colour. Point at a card to pick out its line.</div><div class="chart" id="ch-dl"></div></div></section>`;
 }
 // the terms the CEO asks about, in the project currency: size, price, fee, term, equity and – on renovation deals – the works
@@ -98,24 +98,73 @@ function dealOutcome(s, r) {
     : !cash ? { tone: 'warn', txt: `Repaid, but the borrower needs ${money(-s.lowCashPre)} extra by ${mgMonth(s.lowCashPreDate)}` }
     : { tone: 'good', txt: `Repaid ${s.repaidDate ? mgMonth(s.repaidDate) : 'at maturity'}, no cash shortfall` };
 }
-OUT.dealres = () => { // plain numbers, no notes under them (Tautvydas, 9 Nov) – the terms are on the left, the details on Summary
-  const m = S.model, s = m.summary, r = m.r;
+// the results of one engine run as [key, label, value html, tone, trace key]; plain numbers, no notes under them (Tautvydas, 9 Nov)
+function dealResRows(m) {
+  const s = m.summary, r = m.r, out = [];
   const lim = r.maxLTV, ltvT = (v) => (v == null ? '' : v > lim ? 'bad' : 'good'), roomT = (v) => (v < 0.1 ? 'bad' : v < 0.2 ? 'warn' : 'good');
-  const it = (l, v, tone = '', tr = '') => `<div class="dl-it"><div class="l">${l}</div><div class="v ${tone}"${tr ? ` data-tr="m:${tr}"` : ''}>${v}</div></div>`;
+  const it = (k, l, v, tone = '', tr = '') => out.push([k, l, v, tone, tr]);
   const pk = peakOf(m, 'ltv'), a = dealAtMat(s, r), fee = feeOf(s);
-  return '<div class="dl-grid">' +
-    it(r.tranchesOn ? 'Facility' : 'Loan', money(s.facility), '', 'facility') +
-    (s.netCash < -1 ? it('Funding gap at drawdown', money(-s.netCash), 'bad', 'netCash') : '') +
-    it('LTV at drawdown', s.mkt0 > 0 ? pctf(s.ltv0) : '–', ltvT(s.ltv0), 'ltv0') +
-    it('Forced-sale LTV at drawdown', s.fs0 > 0 ? pctf(s.ltvFs0) : '–', ltvT(s.ltvFs0), 'ltvFs0') +
-    it('Highest LTV', pk ? pctf(pk.ltv) : '–', ltvT(pk && pk.ltv), 'maxLtv') +
-    it('Lowest borrower cash before maturity', money(s.lowCashPre), s.lowCashPre < -1 ? 'bad' : 'good', 'lowCashPre') +
-    it(a.refi ? 'Cash at maturity, incl. bank refinancing' : 'Cash at maturity', money(a.v), a.v < -1 ? 'bad' : 'good', a.refi ? '' : 'cashAtMaturity') +
-    (pk && lim > 0 ? (() => { const v = ltvRoom(pk.ltv, lim); return it('Value can fall before the LTV limit', pctf(v), roomT(v)); })() : '') +
-    it('Value can fall before a loss', s.headroom == null ? '–' : pctf(s.headroom), s.headroom == null ? '' : roomT(s.headroom), 'headroom') +
-    (usesDscr(m) && s.dscrTest != null ? it(r.dscrBasis === 'monthly' ? 'Lowest DSCR' : 'Lowest DSCR, 12 months', xf(s.dscrTest), s.dscrTest < r.minDSCR ? 'bad' : 'good', 'dscrTest') : '') +
-    it('InRento fee', `${money(fee)}${s.facility > 0 ? ` <span class="dl-pc">${pctf(fee / s.facility, 1)}</span>` : ''}`, '', 'arrFeeAmt') + '</div>';
+  it('loan', r.tranchesOn ? 'Facility' : 'Loan', money(s.facility), '', 'facility');
+  if (s.netCash < -1) it('gap', 'Funding gap at drawdown', money(-s.netCash), 'bad', 'netCash');
+  it('ltv0', 'LTV at drawdown', s.mkt0 > 0 ? pctf(s.ltv0) : '–', ltvT(s.ltv0), 'ltv0');
+  it('ltvFs0', 'Forced-sale LTV at drawdown', s.fs0 > 0 ? pctf(s.ltvFs0) : '–', ltvT(s.ltvFs0), 'ltvFs0');
+  it('maxLtv', 'Highest LTV', pk ? pctf(pk.ltv) : '–', ltvT(pk && pk.ltv), 'maxLtv');
+  it('low', 'Lowest borrower cash before maturity', money(s.lowCashPre), s.lowCashPre < -1 ? 'bad' : 'good', 'lowCashPre');
+  it('mat', a.refi ? 'Cash at maturity, incl. bank refinancing' : 'Cash at maturity', money(a.v), a.v < -1 ? 'bad' : 'good', a.refi ? '' : 'cashAtMaturity');
+  if (pk && lim > 0) { const v = ltvRoom(pk.ltv, lim); it('room', 'Value can fall before the LTV limit', pctf(v), roomT(v)); }
+  it('loss', 'Value can fall before a loss', s.headroom == null ? '–' : pctf(s.headroom), s.headroom == null ? '' : roomT(s.headroom), 'headroom');
+  if (usesDscr(m) && s.dscrTest != null) it('dscr', r.dscrBasis === 'monthly' ? 'Lowest DSCR' : 'Lowest DSCR, 12 months', xf(s.dscrTest), s.dscrTest < r.minDSCR ? 'bad' : 'good', 'dscrTest');
+  it('fee', 'InRento fee', `${money(fee)}${s.facility > 0 ? ` <span class="dl-pc">${pctf(fee / s.facility, 1)}</span>` : ''}`, '', 'arrFeeAmt');
+  return out;
+}
+OUT.dealres = () => {
+  const c = dealCmp(); if (c) return dealCmpTable(c);
+  return '<div class="dl-grid">' + dealResRows(S.model).map(([, l, v, tone, tr]) => `<div class="dl-it"><div class="l">${l}</div><div class="v ${tone}"${tr ? ` data-tr="m:${tr}"` : ''}>${v}</div></div>`).join('') + '</div>';
 };
+// ---- borrower's plan vs our view (v3.27): two versions picked on the Versions tab (inputs.dealPlan / inputs.dealView, deal-level)
+// shown side by side in Results, so the CEO sees what the borrower claims and what we believe on one screen
+function dealCmp() {
+  const i = cur().inputs, a = vById(+i.dealPlan), b = vById(+i.dealView);
+  return a && b && a.id !== b.id ? { plan: a, view: b } : null;
+}
+const DCMP = {};
+function dealRunOf(v) { // engine run of one version, in the currency shown
+  const live = v.id === vActiveId(), eur = viewEUR();
+  const key = `${v.id}:${live ? 'live' + (S.ver[S.curId] || 0) : v.updatedAt || v.createdAt}:${eur}`;
+  if (DCMP[v.id] && DCMP[v.id].key === key) return DCMP[v.id].m;
+  let p = normalise(clone(vDataOf(v))); if (eur && fxRateOf(p) > 0) p = convertProject(p, fxRateOf(p));
+  let m = null; try { m = E.run(p); } catch (e) { console.error(e); }
+  DCMP[v.id] = { key, m }; return m;
+}
+function dealCmpTable(c) {
+  const mp2 = [c.plan, c.view].map(dealRunOf);
+  if (mp2.some((m) => !m)) return '<div class="sub">One of the compared versions could not be calculated – open it to check its inputs.</div>';
+  const rows = mp2.map(dealResRows), keys = [...new Set(rows.flatMap((r) => r.map((x) => x[0])))];
+  const cell = (r, k) => { const x = r.find((y) => y[0] === k); return x ? `<td class="n v ${x[3]}">${x[2]}</td>` : '<td class="n sub">–</td>'; };
+  const lbl = (k) => (rows[1].find((y) => y[0] === k) || rows[0].find((y) => y[0] === k))[1];
+  const head = (t, v) => { const sub = [v.label.trim().toLowerCase() === t.toLowerCase() ? '' : esc(v.label), v.id === vActiveId() ? 'open' : ''].filter(Boolean).join(' · ');
+    return `<th class="n">${t}${sub ? `<div class="sub">${sub}</div>` : ''}</th>`; };
+  return `<div class="tblwrap"><table class="dl-cmp"><thead><tr><th></th>${head("Borrower's plan", c.plan)}${head('Our view', c.view)}</tr></thead>
+    <tbody>${keys.map((k) => `<tr><td>${esc(lbl(k))}</td>${cell(rows[0], k)}${cell(rows[1], k)}</tr>`).join('')}</tbody></table></div>`;
+}
+function dealScNote() {
+  const c = dealCmp(); if (!c) return '';
+  const open = vById(vActiveId());
+  return `<div class="sub" style="margin:2px 0 8px">Scenarios run on the open version${open ? `, “${esc(open.label)}”` : ''}.${c.view.id !== vActiveId() ? ` Open “${esc(c.view.label)}” to stress our view.` : ''}</div>`;
+}
+// Versions tab: which two versions the Deal tab compares (only the lock holder changes it)
+function dealCmpPicker(p, vs) {
+  const ed = canEdit(p.id), opt = (k) => `<option value="">–</option>${vs.map((v) => `<option value="${v.id}" ${String(v.id) === String(p.inputs[k] || '') ? 'selected' : ''}>${esc(v.label)}</option>`).join('')}`;
+  return `<div class="row dl-pick" style="gap:12px;margin-bottom:12px;align-items:flex-end"><div><div class="dl-h">On the Deal tab</div><div class="sub">Show two versions side by side in Results.</div></div>
+    <label><span class="sub">Borrower's plan</span><br><select class="in" id="dl-plan" style="width:auto" ${ed ? '' : 'disabled'}>${opt('dealPlan')}</select></label>
+    <label><span class="sub">Our view</span><br><select class="in" id="dl-view" style="width:auto" ${ed ? '' : 'disabled'}>${opt('dealView')}</select></label></div>`;
+}
+document.addEventListener('change', (e) => {
+  const id = e.target && e.target.id; if (id !== 'dl-plan' && id !== 'dl-view') return;
+  const p = cur(); if (!p) return;
+  p.inputs[id === 'dl-plan' ? 'dealPlan' : 'dealView'] = e.target.value; scheduleSave(p.id);
+  if (p.inputs.dealPlan && p.inputs.dealPlan === p.inputs.dealView) toast('Pick two different versions to compare');
+});
 // borrower cash month by month until maturity (the final repayment itself is the 'cash at maturity' number)
 function dealSpark(rows, mat, tone) {
   const v = rows.filter((x) => x.date < mat).map((x) => x.cash), n = v.length; if (n < 2) return '';
@@ -128,12 +177,20 @@ function dealShown(scen) {
   const base = scen.length ? sig(scen[0].res.summary) : '';
   return scen.filter((x, k) => k === 0 || sig(x.res.summary) !== base);
 }
+// security in a scenario (v3.27): LTV and forced-sale LTV at drawdown, so a value cut shows even when repayment is unchanged.
+// amber = LTV above the deal's limit, red = a forced sale no longer covers the loan (forced-sale LTV above 100%)
+function dealScLtv(s, r) {
+  if (!(s.mkt0 > 0)) return { tone: 'good', html: '' };
+  const lim = r.maxLTV, t = (v) => (v == null ? '' : v > 1 ? 'bad' : v > lim ? 'warn' : 'good'), tone = worseTone(t(s.ltv0) || 'good', t(s.ltvFs0) || 'good');
+  return { tone, html: `<div class="dl-scl">LTV <b class="${t(s.ltv0)}">${pctf(s.ltv0)}</b> · forced-sale <b class="${t(s.ltvFs0)}">${s.fs0 > 0 ? pctf(s.ltvFs0) : '–'}</b></div>` };
+}
+const worseTone = (a, b) => (['bad', 'warn', 'good'].find((x) => x === a || x === b) || a);
 OUT.dealsc = () => {
   const p = cur(), { scen } = sensModel(), r = S.model.r; if (!scen.length) return '';
   const shown = dealShown(scen), same = scen.length - shown.length;
-  const card = (x, k) => { const s = x.res.summary, o = dealOutcome(s, r), j = scen.indexOf(x);
-    return `<div class="dl-sc ${o.tone}" data-dl="${k}"><div class="dl-sch"><b><i class="dl-sw" style="background:${SCOL[k]}"></i>${esc(x.name)}</b><span class="dl-dot ${o.tone}"></span></div><div class="sub dl-what">${esc(scWhat(p, j))}</div>
-      <div class="dl-sco ${o.tone}">${esc(o.txt)}</div></div>`; };
+  const card = (x, k) => { const s = x.res.summary, o = dealOutcome(s, r), j = scen.indexOf(x), l = dealScLtv(s, r), tone = worseTone(o.tone, l.tone);
+    return `<div class="dl-sc ${tone}" data-dl="${k}"><div class="dl-sch"><b><i class="dl-sw" style="background:${SCOL[k]}"></i>${esc(x.name)}</b><span class="dl-dot ${tone}"></span></div><div class="sub dl-what">${esc(scWhat(p, j))}</div>
+      <div class="dl-sco ${o.tone}">${esc(o.txt)}</div>${l.html}</div>`; };
   return `<div class="dl-scs">${shown.map((x, k) => card(x, k)).join('')}</div>${same ? `<div class="sub" style="margin-top:8px">${same} scenario${same > 1 ? 's' : ''} not shown – same result as ${esc(scen[0].name)} on this deal (they move drivers the deal does not have).</div>` : ''}`;
 };
 // pointing at a scenario card picks out its line in the chart below

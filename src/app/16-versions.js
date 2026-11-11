@@ -32,7 +32,7 @@ async function vSwitch(vid) {
   const data = normalise(clone(v.data)); data.createdAt = p.createdAt; delete data.id; data.inputs.activeVersion = String(vid);
   const keep = DEAL_LEVEL(p); // stage, next action, open items, decision log, deck description, benefits and risks, links belong to the deal, not the version
   Object.assign(data, { status: keep.status, nextAction: keep.nextAction, nextOwner: keep.nextOwner, nextDue: keep.nextDue, todos: keep.todos, judgement: keep.judgement });
-  Object.assign(data.inputs, { benefits: keep.benefits, risks: keep.risks, deckDesc: keep.deckDesc, links: keep.links });
+  Object.assign(data.inputs, { benefits: keep.benefits, risks: keep.risks, deckDesc: keep.deckDesc, links: keep.links, dealPlan: keep.dealPlan, dealView: keep.dealView });
   S.projects[id] = data; delete UNDO[id]; undoInit(id);
   scheduleSave(id, 10); recalc(true); render();
   toast(`Now on “${v.label}”. Edits are saved into this version.`);
@@ -92,7 +92,7 @@ document.addEventListener('click', (e) => {
 }, true);
 
 // ---- automatic change notes: what differs from the version it was created from
-const V_SKIP = /^(updatedAt|createdAt|metrics|id|_new|_meta|notes|todos|name|status|borrower|country|projectType|contact|grid|inputs\.(sources|ignoredChecks|activeVersion|showAll|dealType))/;
+const V_SKIP = /^(updatedAt|createdAt|metrics|id|_new|_meta|notes|todos|name|status|borrower|country|projectType|contact|grid|inputs\.(sources|ignoredChecks|activeVersion|showAll|dealType|dealPlan|dealView))/;
 const V_TABLES = { tranches: 'Drawdown schedule', assets: 'Collateral & sales', adjustments: 'Adjustments', debts: 'Existing debts', constrLines: 'Construction budget', revLines: 'Revenue lines', costLines: 'Cost lines', scenarios: 'Stress scenarios' };
 function vLabels() { const L = {}; for (const [, , fs] of INPUT_SECTIONS()) for (const f of fs) L['inputs.' + f.k] = f.label; return L; }
 const vFmt = (s) => { const n = Number(s); return s !== '' && s != null && isFinite(n) && /^-?[\d.]+$/.test(String(s)) ? nf0.format(Math.round(n * 100) / 100) : (s === '' || s == null ? '–' : String(s)); };
@@ -180,6 +180,7 @@ function tabVersions() {
       <td><div class="row" style="flex-wrap:nowrap;gap:4px">${v.id === aid ? '' : `<button class="btn sm" data-act="open-version" data-i="${v.id}">Open</button><button class="xbtn" data-act="del-version2" data-i="${v.id}" aria-label="Delete ${esc(v.label)}">×</button>`}</div></td></tr>`;
   }).join('') : '';
   return `<div class="stack"><div class="card"><div class="row" style="justify-content:space-between;margin-bottom:8px"><div><h2>Versions</h2><div class="sub">Each version is a complete set of inputs you can switch to and keep editing. The open version saves as you work. Tick up to 4 to compare.</div></div><button class="btn primary" data-act="save-version">＋ New version from the open one</button></div>
+    ${vs.length >= 2 ? dealCmpPicker(cur(), vs) : ''}
     ${vs.length ? `<div class="tblwrap"><table class="vlist"><thead><tr><th></th><th>Version</th><th>Changes</th><th>Updated</th><th></th></tr></thead><tbody>${list}</tbody></table></div>` : '<div class="sub">No versions yet. "New version" saves the current inputs as “Main” and opens a copy to change.</div>'}</div>
     ${sel.length >= 2 ? `<div class="card"><div class="row" style="justify-content:space-between;margin-bottom:8px"><h2>Side by side</h2></div>${vCompareTable(sel)}<div class="note" style="margin-top:6px">Best value per row in green. Break-even: average sale price per m² at which sales still cover principal, interest and returns (as on the Sensitivity tab).</div></div>
     <div class="card"><h3>Inputs that differ</h3>${vInputDiffs(sel)}</div>` : vs.length ? '<div class="card"><div class="sub">Tick two or more versions to compare them side by side.</div></div>' : ''}</div>`;
