@@ -47,6 +47,15 @@ const check = (ok, what, got) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}$
     check(!(await pg.$('.dl-kvs [data-k]')) && (await text('.dl-kvs')).includes('11%'), 'Deal tab shows the structure as text', await text('.dl-kvs'));
     check((await text('[data-out="dealres"]')).includes('50.0%'), 'Deal tab shows the LTV', await text('[data-out="dealres"]'));
     check((await text('[data-out="dealsc"]')).includes('Base'), 'Deal tab shows the scenarios', await text('[data-out="dealsc"]'));
+    // 3c Sensitivity: the two-driver grid follows the drivers chosen under "Choose your own two drivers"
+    await tab('sens'); await sleep(600);
+    check((await text('[data-out="grid2"]')).includes('Sale prices'), 'two-driver grid preset by deal type', await text('[data-out="grid2"]'));
+    await pg.click('details[data-own-grid] summary'); await sleep(600);
+    await pg.selectOption('#g-row', 'salePrice'); await sleep(900);
+    check((await text('[data-out="grid2"]')).includes('Sale price change'), 'own drivers drive the two-driver grid', await text('[data-out="grid2"]'));
+    await pg.click('details[data-own-grid] summary'); await sleep(600);
+    check((await text('[data-out="grid2"]')).includes('Sale prices ↓'), 'closing it brings back the preset grid', await text('[data-out="grid2"]'));
+    await tab('deal');
     await pg.click('[data-act="dl-add"][data-box="listings"]'); await pg.fill('#dl-url', 'otodom.pl/pl/oferta/test'); await pg.fill('#dl-lbl', 'Unit 4'); await pg.click('[data-act="dl-save"]'); await sleep(400);
     await tab('inputs'); await tab('deal');
     check((await text('.dl-links')).includes('Unit 4') && (await pg.$eval('.dl-links a', (a) => a.href)) === 'https://otodom.pl/pl/oferta/test', 'a link added on the Deal tab is kept (https:// added)', await text('.dl-lbs'));

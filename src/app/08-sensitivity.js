@@ -21,7 +21,11 @@ function tabSens() {
       <span class="row" style="gap:4px">${p.grid.colVals.map((v, k) => inp(`grid.colVals.${k}`, v, 'num', 'style="width:62px" aria-label="Column value"')).join('')}</span></div>
     <div data-out="grid"></div></div></details></div></div>`;
 }
-document.addEventListener('toggle', (e) => { if (e.target.matches && e.target.matches('details[data-own-grid]')) S.ownGrid = e.target.open; }, true);
+// opening "Choose your own two drivers" switches the main grid to your drivers; closing it brings back the standard grid
+document.addEventListener('toggle', (e) => {
+  if (!(e.target.matches && e.target.matches('details[data-own-grid]'))) return;
+  S.ownGrid = e.target.open; const o = document.querySelector('[data-out="grid2"]'); if (o) o.innerHTML = OUT.grid2();
+}, true);
 
 // ---- 1. how much room
 OUT.room = () => {
@@ -77,12 +81,26 @@ document.addEventListener('click', (e) => {
 // ---- 3. two drivers together: the grid that matters for the deal type (same as the committee deck)
 OUT.grid2 = () => {
   let M; try { M = marginCalc(); } catch (e) { return ''; }
-  const g = M.grid; if (!g) return '<div class="sub">Add planned sales or revenue to see the grid.</div>';
+  const g = S.ownGrid ? ownGrid(M) : M.grid; if (!g) return '<div class="sub">Add planned sales or revenue to see the grid.</div>';
   const txt = (o) => (o.tone === 'good' ? 'Repaid' : o.tone === 'warn' ? `Needs ${mgK(-o.low)}` : `${mgK(o.short)} short`);
   return `<div class="tblwrap"><table class="heat g2"><thead><tr><th>${esc(g.rl)} ↓ · ${esc(g.cl)} →</th>${g.cv.map((v) => `<th class="n">${g.cf(v)}</th>`).join('')}</tr></thead><tbody>
-    ${g.cells.map((row, i) => `<tr><td><b>${g.rf(g.rv[i])}</b>${g.rAbs ? `<div class="sub">${g.rAbs(g.rv[i])}</div>` : ''}</td>${row.map((o, k) => `<td class="n g2-${o.tone} ${!i && !k ? 'base' : ''}">${txt(o)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
+    ${g.cells.map((row, i) => `<tr><td><b>${g.rf(g.rv[i])}</b>${g.rAbs ? `<div class="sub">${g.rAbs(g.rv[i])}</div>` : ''}</td>${row.map((o, k) => `<td class="n g2-${o.tone} ${(g.isBase ? g.isBase(i, k) : !i && !k) ? 'base' : ''}">${txt(o)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
+    ${g.own ? `<div class="note" style="margin-top:6px">Your two drivers (set below). Close “Choose your own two drivers” to go back to the standard grid.${g.flat ? ` ${esc(g.flat)}` : ''}</div>` : ''}
     <div class="note" style="margin-top:6px">Repaid = repaid by maturity with no cash shortfall · Needs = the borrower must add cash before maturity, the loan is still repaid · short = still owed to InRento at maturity. Outlined = plan.</div>`;
 };
+// the same grid for the two drivers chosen under "Choose your own two drivers" (p.grid)
+function ownGrid(M) {
+  const g = cur().grid, rd = DRIVERS.find((d) => d.k === g.rowDriver) || DRIVERS[0], cd = DRIVERS.find((d) => d.k === g.colDriver) || DRIVERS[3];
+  const cv = (d, v) => (d.pct ? E.pct(v) : E.num(v));
+  const lbl = (d, v) => (d.pct ? (E.pct(v) * 100).toFixed(1).replace(/\.0$/, '') + (d.unit === 'pp' ? ' pp' : '%') : `${E.num(v)} months`);
+  const cells = g.rowVals.map((rv) => g.colVals.map((c) => { const dev = {}; dev[rd.k] = cv(rd, rv); dev[cd.k] = (rd.k === cd.k ? dev[cd.k] : 0) + cv(cd, c); return M.outcome(M.run(dev)); }));
+  const same = (a, b) => a.tone === b.tone && Math.abs((a.low || 0) - (b.low || 0)) < 1 && Math.abs(a.short - b.short) < 1;
+  const rowsFlat = cells.every((row) => row.every((o, k) => same(o, cells[0][k]))), colsFlat = cells.every((row) => row.every((o) => same(o, row[0])));
+  const flat = [rowsFlat && `${rd.label} doesn't change cash or repayment on this deal`, colsFlat && `${cd.label} doesn't change cash or repayment on this deal`].filter(Boolean);
+  return { own: true, rl: rd.label, cl: cd.label, rv: g.rowVals, cv: g.colVals, rf: (v) => lbl(rd, v), cf: (v) => lbl(cd, v), cells,
+    isBase: (i, k) => cv(rd, g.rowVals[i]) === 0 && cv(cd, g.colVals[k]) === 0,
+    flat: flat.length ? `${flat.join('; ')} – see the tables below for LTV.` : '' };
+}
 const SENS_ROWS = [
   ['Minimum DSCR (test basis)', (s) => xf(s.dscrTest), (s, r) => (s.dscrTest == null ? '' : s.dscrTest >= r.minDSCR ? 'hg' : 'hb')],
   ['Minimum monthly DSCR', (s) => xf(s.minDscr)], ['Average monthly DSCR', (s) => xf(s.avgDscr)], ['Minimum ICR', (s) => xf(s.minIcr)],
@@ -139,7 +157,7 @@ function mgTests(r) {
   };
 }
 function marginCalc() {
-  const p = mp(), key = JSON.stringify(p);
+  const p = mp(), key = JSON.stringify({ ...p, grid: null }); // the custom grid's drivers don't change the margins
   if (MG.key === key && MG.out) return MG.out;
   const R = E.resolve(p);
   const run = (dev) => E.run(p, Object.assign({}, E.ZERO_DEV, dev || {}), { resolved: R });
@@ -208,7 +226,7 @@ function marginCalc() {
     const n = (o) => (o.fails ? -1 : o.x); d.bind = n(d.cash) <= n(d.repay) ? 'cash' : 'repay'; d.eff = d[d.bind];
     d.failAmt = { cash: bs.lowCashPre < 0 ? `${mgK(-bs.lowCashPre)} short by ${mgMonth(bs.lowCashPreDate)}` : '', repay: planShort > 0 ? `${mgK(planShort)} short at maturity` : '' };
   }
-  const out = { base, plan, kind, drivers, scenarios, grid, refi: T.refi, planCash: T.cash(bs), planRepay: T.repay(bs), planShort };
+  const out = { base, plan, kind, drivers, scenarios, grid, run, outcome, refi: T.refi, planCash: T.cash(bs), planRepay: T.repay(bs), planShort };
   MG.key = key; MG.out = out;
   return out;
 }
