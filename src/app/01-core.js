@@ -49,7 +49,7 @@ const DEFAULT_INPUTS = () => ({
   currency: 'EUR', drawdown: nextMonthStart(), horizon: '24', openingCash: '0', opModel: 'simple',
   revenueSource: 'manual', revenue: '0', revGrowth: '0', opex: '0', opexGrowth: '0', cfStart: '', tax: '0', otherDebt: '0', otherDebtEnd: '',
   vat: '0', commission: '0', cardFee: '0', ancillary: '0',
-  loan: '0', tranchesOn: false, rate: '10', term: '24', repayType: 'Bullet', grace: '0', capitalise: 'No', payMonths: Array(12).fill(true), payPlan: [], links: [], escrowOn: false,
+  loan: '0', tranchesOn: false, rate: '10', term: '24', repayType: 'Bullet', grace: '0', capitalise: 'No', payMonths: Array(12).fill(true), payPlan: [], links: [], dealPlan: '', dealView: '', escrowOn: false,
   extOn: false, extMonths: '6', extFee: '1', extRate: '', defaultRate: '',
   sweepDefault: '100', sweepBasis: 'Gross sale price', sweepApplies: 'All asset sales', saleRepay: 'sweep', releasePct: '115',
   opSweepPct: '0', opSweepMin: '0', opSweepMonths: Array(12).fill(false),
@@ -183,7 +183,7 @@ function go(view, id, tab) {
 function render() { if (S.view === 'home') renderHome(); else renderProject(); }
 async function loadSide() {
   const id = S.curId; if (!id || S.store !== 'sqlite' || cur()._new) { S.versions = []; return; }
-  try { const v = await api('GET', `/api/projects/${encodeURIComponent(id)}/versions`); if (S.curId === id) { S.versions = v; if (['overview', 'versions'].includes(S.tab)) renderTab(); } } catch { S.versions = []; }
+  try { const v = await api('GET', `/api/projects/${encodeURIComponent(id)}/versions`); if (S.curId === id) { S.versions = v; if (['overview', 'versions', 'deal'].includes(S.tab)) renderTab(); } } catch { S.versions = []; }
   const vs = $('#vsel'); if (vs && S.view === 'project') { const l = vs.closest('.vswitch'); if (l) l.outerHTML = vSwitcher(); }
 }
 
