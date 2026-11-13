@@ -1,4 +1,4 @@
-# Deal Desk – changes after v2.8 (current: v3.27.1, 12 Nov 2026)
+# Deal Desk – changes after v2.8 (current: v3.27.2, 13 Nov 2026)
 
 - v2.9 Currency view: PLN/EUR switch (Summary, Cash flow, Sensitivity, KPIs on those tabs, deck, Excel export); inputs stay in project currency. fxRate/fxDate per project, "Get today's ECB rate" (server /api/fx, urllib then /usr/bin/curl fallback). €5m check in Model check (warn > €5m, note > €4.5m, warn if no rate). app_i.js.
 - v3.0 Documents panel (app_j.js): right-side resizable panel; Word via mammoth 1.8.0 (inlined) with section navigator + search, Excel sheet tabs + search, PDF with #page jump, images; document type in documents.note; import `_documents` from ~/Deal Desk/import/<folder>; source tags in inputs.sources (blue doc / amber assumed / grey edited) with Open/Confirm chip; "N assumed values to confirm" (v3.2.1: "Confirm all" fix button).
@@ -119,3 +119,7 @@ Source of truth: ~/Desktop/Underwriting tool/deal-desk (from v3.11; v2 is retire
   - Set up on the Deal tab itself (lock holder only): pick the two versions there, or "Make an 'Our view' version" keeps the open one as the plan and opens a copy (`dealMakeView`). Read-only viewers see only the comparison.
   - LTV line on the scenario cards removed (Tautvydas: not needed there).
   - Guard: engine unchanged. App snapshot re-recorded for the 15 Deal views: compared with 3.26.0 they only gained the three-line set-up bar shown to the lock holder (checked; no number moved).
+- v3.27.2 (13 Nov 2026) At Tautvydas's request:
+  - Home lists Turned in first – what waits for the CEO's decision – then the pipeline in order (`HOME_ORDER`); stage counts unchanged.
+  - Overview notes belong to the deal (in `DEAL_LEVEL`, kept on a version switch) and are labelled "Internal notes – not shown on the Deal tab or in the committee deck".
+  - Guard: engine unchanged. App snapshot re-recorded for the 15 Overview views (the label only). UI test: Home shows Turned in first.
