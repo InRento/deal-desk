@@ -12,7 +12,7 @@ function nextState(p) { // 'ok' | 'missing' | 'overdue' | 'today' | 'none' (not 
 }
 
 // ---- old statuses → stages; deal-level fields survive a version switch
-const DEAL_LEVEL = (p) => ({ status: p.status, nextAction: p.nextAction, nextOwner: p.nextOwner, nextDue: p.nextDue, todos: clone(p.todos || []), judgement: clone(p.judgement || {}), benefits: p.inputs.benefits, risks: p.inputs.risks, deckDesc: p.inputs.deckDesc, links: clone(p.inputs.links || []), dealPlan: p.inputs.dealPlan || '', dealView: p.inputs.dealView || '' });
+const DEAL_LEVEL = (p) => ({ status: p.status, nextAction: p.nextAction, nextOwner: p.nextOwner, nextDue: p.nextDue, todos: clone(p.todos || []), judgement: clone(p.judgement || {}), benefits: p.inputs.benefits, risks: p.inputs.risks, deckDesc: p.inputs.deckDesc, links: clone(p.inputs.links || []), notes: p.notes || '', dealPlan: p.inputs.dealPlan || '', dealView: p.inputs.dealView || '' });
 
 // ---- closing an open item stamps the date
 document.addEventListener('change', (e) => {
@@ -54,6 +54,8 @@ function nextCell(p) {
   if (st === 'missing') return '<span class="nxt bad-t">No next action</span>';
   return `<span class="nxt ${st === 'overdue' ? 'bad-t' : ''}">${esc(p.nextAction)}</span><div class="sub">${esc([p.nextOwner, p.nextDue ? (st === 'overdue' ? 'overdue · ' : st === 'today' ? 'today · ' : '') + dshort(p.nextDue) : 'no date'].filter(Boolean).join(' · '))}</div>`;
 }
+// Home lists Turned in first – what waits for the CEO's decision (Tautvydas, 13 Nov) – then the pipeline in order
+const HOME_ORDER = ['Turned in', ...STATUSES.filter((s) => s !== 'Turned in')];
 function renderHome() {
   document.title = 'InRento Deal Desk';
   const all = homeRows(), total = all.length;
@@ -64,7 +66,7 @@ function renderHome() {
     <td class="nxtc">${nextCell(p)}</td>
     <td class="n">${r ? money(r.facility, c) : '–'}</td><td class="n">${r ? pctf(rr.rate, 2) : '–'}</td><td class="n">${r ? pctf(r.ltv0) : '–'}</td>
     <td class="sub">${p.updatedAt ? new Date(p.updatedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : ''}</td><td class="go" aria-hidden="true">›</td></tr>`;
-  const groups = STATUSES.map((s) => [s, list.filter((x) => x.p.status === s).sort((a, b) => String(a.p.nextDue || '9999').localeCompare(String(b.p.nextDue || '9999')) || String(b.p.updatedAt || '').localeCompare(String(a.p.updatedAt || '')))])
+  const groups = HOME_ORDER.map((s) => [s, list.filter((x) => x.p.status === s).sort((a, b) => String(a.p.nextDue || '9999').localeCompare(String(b.p.nextDue || '9999')) || String(b.p.updatedAt || '').localeCompare(String(a.p.updatedAt || '')))])
     .filter(([s, l]) => l.length);
   const head = `<thead><tr><th>Project</th><th>Next action</th><th class="n">Loan</th><th class="n">Rate</th><th class="n">LTV</th><th>Updated</th><th></th></tr></thead>`;
   const table = `<div class="tblwrap pipewrap"><table class="reg pipe">${head}${groups.map(([s, l]) => `<tbody><tr class="grp"><th colspan="7"><span class="grph ${stCls(s)}">${esc(s)}</span> <span class="sub">${l.length}</span></th></tr>${l.map(row).join('') || '<tr class="empty-row"><td colspan="7" class="sub">None</td></tr>'}</tbody>`).join('')}</table></div>`;
