@@ -35,7 +35,7 @@ function tabOverview() {
     <div class="card"><h3>Deal</h3><div class="form">
       ${meta('name', 'Project name')}${meta('borrower', 'Borrower')}${meta('country', 'Country')}${meta('projectType', 'Project type')}<div class="f meta"><span class="lbl">Deal type</span><span class="ctl">${typeSelect(p)}</span></div>${meta('contact', 'Contact / broker')}
     </div>
-    <label style="display:block;margin-top:10px"><span class="sub">Notes</span><textarea class="in" id="m-notes" data-k="notes" rows="6" style="margin-top:4px;resize:vertical">${esc(p.notes)}</textarea></label>
+    <label style="display:block;margin-top:10px"><span class="sub">Internal notes – not shown on the Deal tab or in the committee deck</span><textarea class="in" id="m-notes" data-k="notes" rows="6" style="margin-top:4px;resize:vertical">${esc(p.notes)}</textarea></label>
     </div>
     <div class="card"><h3>Snapshot</h3><div data-out="tiles"></div></div>
   </div><div class="stack">

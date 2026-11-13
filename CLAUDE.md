@@ -17,7 +17,7 @@ Read README.md first. This file is how the code is put together and the rules fo
 | File | Contents |
 |---|---|
 | 01-core | helpers, number and date formatting, defaults (`DEFAULT_INPUTS`, `blankProject`, `normalise`), state, saving, navigation, `recalc`, top bar and KPI strip |
-| 02-home | Home (stage headings with the projects boxed below; no stage or checks column), stage counts, Today view, pipeline stage card, next action, chasing open items |
+| 02-home | Home (stage headings with the projects boxed below, Turned in first – `HOME_ORDER`, v3.27.2; no stage or checks column), stage counts, Today view, pipeline stage card, next action, chasing open items |
 | 03-project | project page, `renderTab`, input control helpers (`inp`, `sel`, `chk`, `dateIn`), Overview tab, benefits & risks box |
 | 04-inputs | `INPUT_SECTIONS` (every model input: key, label, kind, help), deal types, Inputs tab layout (`IN_LAYOUT`) and results rail, drawdown schedule, existing debts, sources & uses, LTV after each tranche |
 | 05-ops | Operating model tab (revenue and cost lines) |

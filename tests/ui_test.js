@@ -147,6 +147,11 @@ const check = (ok, what, got) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}$
     await sleep(1500); await pg.reload(); await sleep(1200);
     check((await text('#app')).includes('Test Tower, Riga'), 'project is still there after a reload');
     check(fs.readdirSync(path.join(drive, 'Deals')).some((f) => f.startsWith('Test Tower, Riga (') && fs.existsSync(path.join(drive, 'Deals', f, 'deal.json'))), 'project written to the shared folder', JSON.stringify(fs.readdirSync(path.join(drive, 'Deals'))));
+    // 11b Home lists Turned in first (what waits for the CEO), then the pipeline in order
+    await pg.evaluate(() => fetch('/api/projects/ui-second', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Second deal', status: 'New deal', inputs: {} }) }));
+    await pg.click('tr[data-open] b'); await sleep(600); await tab('overview'); await pg.click('[data-act="set-stage"][data-v="Turned in"]'); await sleep(1500);
+    await pg.reload(); await sleep(1500);
+    { const g = await pg.$$eval('.grph', (x) => x.map((e) => e.textContent.trim())); check(g[0] === 'Turned in' && g.includes('New deal'), 'Home shows Turned in first', g.join(', ')); }
     // 12 no Documents tab any more: sources carry a Drive link instead
     await pg.click('tr[data-open] b'); await sleep(600); // the reload above lands on Home
     check(!(await pg.$('.tab[data-tab="docs"]')), 'no Documents tab');

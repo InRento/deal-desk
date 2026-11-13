@@ -30,8 +30,8 @@ async function vSwitch(vid) {
   await loadSide();
   const v = vById(vid); if (!v) { toast('Version not found'); return; }
   const data = normalise(clone(v.data)); data.createdAt = p.createdAt; delete data.id; data.inputs.activeVersion = String(vid);
-  const keep = DEAL_LEVEL(p); // stage, next action, open items, decision log, deck description, benefits and risks, links belong to the deal, not the version
-  Object.assign(data, { status: keep.status, nextAction: keep.nextAction, nextOwner: keep.nextOwner, nextDue: keep.nextDue, todos: keep.todos, judgement: keep.judgement });
+  const keep = DEAL_LEVEL(p); // stage, next action, open items, decision log, deck description, benefits and risks, links, internal notes belong to the deal, not the version
+  Object.assign(data, { status: keep.status, nextAction: keep.nextAction, nextOwner: keep.nextOwner, nextDue: keep.nextDue, todos: keep.todos, judgement: keep.judgement, notes: keep.notes });
   Object.assign(data.inputs, { benefits: keep.benefits, risks: keep.risks, deckDesc: keep.deckDesc, links: keep.links, dealPlan: keep.dealPlan, dealView: keep.dealView });
   S.projects[id] = data; delete UNDO[id]; undoInit(id);
   scheduleSave(id, 10); recalc(true); render();
